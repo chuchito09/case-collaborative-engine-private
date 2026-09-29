@@ -164,7 +164,7 @@ public class XmiInteroperabilityService {
                     depElement.setAttribute("client", "EAID_CLS_" + r.getClaseOrigen().getId());
                     depElement.setAttribute("supplier", "EAID_CLS_" + r.getClaseDestino().getId());
                     packagedElement.appendChild(depElement);
-                } else {
+                } else if (!"CLASE_ASOCIACION".equalsIgnoreCase(r.getTipoRelacion())) {
                     Element assocElement = doc.createElement("packagedElement");
                     assocElement.setAttribute("xmi:type", "uml:Association");
                     assocElement.setAttribute("xmi:id", "EAID_ASSOC_" + r.getId());
@@ -215,6 +215,44 @@ public class XmiInteroperabilityService {
             Element eaExtension = doc.createElement("xmi:Extension");
             eaExtension.setAttribute("extender", "Enterprise Architect");
             eaExtension.setAttribute("extenderID", "6.5");
+
+            // Elementos para el modelo en EA (necesario para que EA reconozca el paquete y las clases de asociación)
+            Element elementsElem = doc.createElement("elements");
+            String pkgId = packagedElement.getAttribute("xmi:id");
+            Element pkgElem = doc.createElement("element");
+            pkgElem.setAttribute("xmi:idref", pkgId);
+            pkgElem.setAttribute("xmi:type", "uml:Package");
+            pkgElem.setAttribute("name", diagrama.getNombre());
+            pkgElem.setAttribute("scope", "public");
+            elementsElem.appendChild(pkgElem);
+
+            for (Clase c : clases) {
+                Element cElem = doc.createElement("element");
+                cElem.setAttribute("xmi:idref", "EAID_CLS_" + c.getId());
+                cElem.setAttribute("xmi:type", "uml:Class");
+                cElem.setAttribute("name", c.getNombre());
+                cElem.setAttribute("scope", c.getVisibilidad() != null ? c.getVisibilidad() : "public");
+
+                RelacionClase assocClassRel = relaciones.stream().filter(r ->
+                    "CLASE_ASOCIACION".equalsIgnoreCase(r.getTipoRelacion()) &&
+                    r.getClaseOrigen().getId().equals(c.getId())
+                ).findFirst().orElse(null);
+
+                if (assocClassRel != null) {
+                    RelacionClase baseRel = relaciones.stream().filter(rb -> 
+                        !"CLASE_ASOCIACION".equalsIgnoreCase(rb.getTipoRelacion()) &&
+                        (rb.getClaseOrigen().getId().equals(assocClassRel.getClaseDestino().getId()) || rb.getClaseDestino().getId().equals(assocClassRel.getClaseDestino().getId()))
+                    ).findFirst().orElse(null);
+
+                    if (baseRel != null) {
+                        Element extProps = doc.createElement("extendedProperties");
+                        extProps.setAttribute("associationconnector", "EAID_ASSOC_" + baseRel.getId());
+                        cElem.appendChild(extProps);
+                    }
+                }
+                elementsElem.appendChild(cElem);
+            }
+            eaExtension.appendChild(elementsElem);
 
             Element connectorsElem = doc.createElement("connectors");
             for (RelacionClase r : relaciones) {
@@ -330,6 +368,23 @@ public class XmiInteroperabilityService {
                 diagElements.appendChild(dObj);
             }
             diagElem.appendChild(diagElements);
+
+            Element diagLinks = doc.createElement("links");
+            for (RelacionClase r : relaciones) {
+                Element dLink = doc.createElement("link");
+                String eaConnId = "EAID_ASSOC_" + r.getId();
+                if ("GENERALIZACION".equalsIgnoreCase(r.getTipoRelacion())) {
+                    eaConnId = "EAID_GEN_" + r.getId();
+                } else if ("REALIZACION".equalsIgnoreCase(r.getTipoRelacion())) {
+                    eaConnId = "EAID_REAL_" + r.getId();
+                } else if ("DEPENDENCIA".equalsIgnoreCase(r.getTipoRelacion())) {
+                    eaConnId = "EAID_DEP_" + r.getId();
+                }
+                dLink.setAttribute("xmi:idref", eaConnId);
+                diagLinks.appendChild(dLink);
+            }
+            diagElem.appendChild(diagLinks);
+
             diagramsElem.appendChild(diagElem);
             eaExtension.appendChild(diagramsElem);
 

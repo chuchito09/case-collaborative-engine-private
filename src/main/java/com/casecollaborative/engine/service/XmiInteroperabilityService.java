@@ -43,6 +43,32 @@ public class XmiInteroperabilityService {
         return prefix + "_" + uuid.toString().replace("-", "_").toUpperCase();
     }
 
+    private RelacionClase findBaseRelForAssocClass(RelacionClase r, List<RelacionClase> relaciones) {
+        if (r == null || relaciones == null) return null;
+        String nombre = r.getNombre();
+        if (nombre != null && (nombre.contains(":") || nombre.contains("-"))) {
+            String sep = nombre.contains(":") ? ":" : "-";
+            String[] parts = nombre.split(sep);
+            if (parts.length == 2) {
+                String n1 = parts[0].trim().toLowerCase();
+                String n2 = parts[1].trim().toLowerCase();
+                for (RelacionClase rb : relaciones) {
+                    if ("CLASE_ASOCIACION".equalsIgnoreCase(rb.getTipoRelacion())) continue;
+                    String oName = rb.getClaseOrigen().getNombre().trim().toLowerCase();
+                    String dName = rb.getClaseDestino().getNombre().trim().toLowerCase();
+                    if ((oName.equals(n1) && dName.equals(n2)) || (oName.equals(n2) && dName.equals(n1))) {
+                        return rb;
+                    }
+                }
+            }
+        }
+
+        return relaciones.stream().filter(rb -> 
+            !"CLASE_ASOCIACION".equalsIgnoreCase(rb.getTipoRelacion()) &&
+            (rb.getClaseOrigen().getId().equals(r.getClaseDestino().getId()) || rb.getClaseDestino().getId().equals(r.getClaseDestino().getId()))
+        ).findFirst().orElse(null);
+    }
+
     @Transactional(readOnly = true)
     public byte[] exportarXmi(Long proyectoId) {
         DiagramaUml diagrama = diagramaRepository.findByProyectoId(proyectoId)
@@ -268,30 +294,31 @@ public class XmiInteroperabilityService {
                 cModel.setAttribute("ea_eleType", "element");
                 cElem.appendChild(cModel);
 
-                Element cProps = doc.createElement("properties");
-                cProps.setAttribute("name", c.getNombre());
-                cProps.setAttribute("type", "Class");
-                cProps.setAttribute("sType", "Class");
-                cProps.setAttribute("scope", c.getVisibilidad() != null ? c.getVisibilidad() : "public");
-                cElem.appendChild(cProps);
-
                 RelacionClase assocClassRel = relaciones.stream().filter(r ->
                     "CLASE_ASOCIACION".equalsIgnoreCase(r.getTipoRelacion()) &&
                     r.getClaseOrigen().getId().equals(c.getId())
                 ).findFirst().orElse(null);
 
+                RelacionClase baseRelForThisClass = null;
                 if (assocClassRel != null) {
-                    RelacionClase baseRel = relaciones.stream().filter(rb -> 
-                        !"CLASE_ASOCIACION".equalsIgnoreCase(rb.getTipoRelacion()) &&
-                        (rb.getClaseOrigen().getId().equals(assocClassRel.getClaseDestino().getId()) || rb.getClaseDestino().getId().equals(assocClassRel.getClaseDestino().getId()))
-                    ).findFirst().orElse(null);
+                    baseRelForThisClass = findBaseRelForAssocClass(assocClassRel, relaciones);
+                }
 
-                    if (baseRel != null) {
-                        String baseConnGuid = toEaGuid("EAID", "REL_" + baseRel.getId());
-                        Element extProps = doc.createElement("extendedProperties");
-                        extProps.setAttribute("associationconnector", baseConnGuid);
-                        cElem.appendChild(extProps);
-                    }
+                Element cProps = doc.createElement("properties");
+                cProps.setAttribute("name", c.getNombre());
+                cProps.setAttribute("type", "Class");
+                cProps.setAttribute("sType", "Class");
+                if (baseRelForThisClass != null) {
+                    cProps.setAttribute("nType", "17");
+                }
+                cProps.setAttribute("scope", c.getVisibilidad() != null ? c.getVisibilidad() : "public");
+                cElem.appendChild(cProps);
+
+                if (baseRelForThisClass != null) {
+                    String baseConnGuid = toEaGuid("EAID", "REL_" + baseRelForThisClass.getId());
+                    Element extProps = doc.createElement("extendedProperties");
+                    extProps.setAttribute("associationconnector", baseConnGuid);
+                    cElem.appendChild(extProps);
                 }
                 elementsElem.appendChild(cElem);
             }
@@ -313,11 +340,7 @@ public class XmiInteroperabilityService {
 
                 Element dstConn = doc.createElement("target");
                 if ("CLASE_ASOCIACION".equalsIgnoreCase(rType)) {
-                    RelacionClase baseRel = relaciones.stream().filter(rb -> 
-                        !"CLASE_ASOCIACION".equalsIgnoreCase(rb.getTipoRelacion()) &&
-                        (rb.getClaseOrigen().getId().equals(r.getClaseDestino().getId()) || rb.getClaseDestino().getId().equals(r.getClaseDestino().getId()))
-                    ).findFirst().orElse(null);
-
+                    RelacionClase baseRel = findBaseRelForAssocClass(r, relaciones);
                     if (baseRel != null) {
                         dstConn.setAttribute("xmi:idref", toEaGuid("EAID", "REL_" + baseRel.getId()));
                     } else {
@@ -358,7 +381,7 @@ public class XmiInteroperabilityService {
                     eaTypeStr = "Composition";
                     subtypeStr = "Composite";
                 } else if ("CLASE_ASOCIACION".equalsIgnoreCase(rType)) {
-                    eaTypeStr = "Association Class";
+                    eaTypeStr = "Association";
                     subtypeStr = "Class";
                     directionStr = "Unspecified";
                 }
@@ -370,6 +393,21 @@ public class XmiInteroperabilityService {
                     propConn.setAttribute("name", r.getNombre());
                 }
                 conn.appendChild(propConn);
+
+                // Si esta relación es una relación base asociada a una CLASE_ASOCIACION, agregar associationclass
+                if (!"CLASE_ASOCIACION".equalsIgnoreCase(rType)) {
+                    RelacionClase assocClassForThisBase = relaciones.stream().filter(ra ->
+                        "CLASE_ASOCIACION".equalsIgnoreCase(ra.getTipoRelacion()) &&
+                        r.equals(findBaseRelForAssocClass(ra, relaciones))
+                    ).findFirst().orElse(null);
+
+                    if (assocClassForThisBase != null) {
+                        String assocClassGuid = toEaGuid("EAID", "CLASS_" + assocClassForThisBase.getClaseOrigen().getId());
+                        Element extProps = doc.createElement("extendedProperties");
+                        extProps.setAttribute("associationclass", assocClassGuid);
+                        conn.appendChild(extProps);
+                    }
+                }
 
                 connectorsElem.appendChild(conn);
             }

@@ -238,7 +238,23 @@ public class XmiInteroperabilityService {
                 conn.appendChild(srcConn);
 
                 Element dstConn = doc.createElement("target");
-                dstConn.setAttribute("xmi:idref", "EAID_CLS_" + r.getClaseDestino().getId());
+                
+                // Si es CLASE_ASOCIACION, en EA el target es el conector base si existe, o la clase destino
+                if ("CLASE_ASOCIACION".equalsIgnoreCase(rType)) {
+                    RelacionClase baseRel = relaciones.stream().filter(rb -> 
+                        !"CLASE_ASOCIACION".equalsIgnoreCase(rb.getTipoRelacion()) &&
+                        (rb.getClaseOrigen().getId().equals(r.getClaseDestino().getId()) || rb.getClaseDestino().getId().equals(r.getClaseDestino().getId()))
+                    ).findFirst().orElse(null);
+
+                    if (baseRel != null) {
+                        dstConn.setAttribute("xmi:idref", "EAID_ASSOC_" + baseRel.getId());
+                    } else {
+                        dstConn.setAttribute("xmi:idref", "EAID_CLS_" + r.getClaseDestino().getId());
+                    }
+                } else {
+                    dstConn.setAttribute("xmi:idref", "EAID_CLS_" + r.getClaseDestino().getId());
+                }
+
                 Element dstMult = doc.createElement("type");
                 dstMult.setAttribute("multiplicity", r.getCardinalidadDestino() != null ? r.getCardinalidadDestino() : "");
                 if ("COMPOSICION".equalsIgnoreCase(rType)) {
@@ -252,12 +268,17 @@ public class XmiInteroperabilityService {
                 Element propConn = doc.createElement("properties");
                 String eaTypeStr = "Association";
                 String subtypeStr = "";
+                String directionStr = "Unspecified";
+
                 if ("GENERALIZACION".equalsIgnoreCase(rType)) {
                     eaTypeStr = "Generalization";
+                    directionStr = "Source -> Destination";
                 } else if ("REALIZACION".equalsIgnoreCase(rType)) {
                     eaTypeStr = "Realisation";
+                    directionStr = "Source -> Destination";
                 } else if ("DEPENDENCIA".equalsIgnoreCase(rType)) {
                     eaTypeStr = "Dependency";
+                    directionStr = "Source -> Destination";
                 } else if ("AGREGACION".equalsIgnoreCase(rType)) {
                     eaTypeStr = "Aggregation";
                     subtypeStr = "Shared";
@@ -265,12 +286,17 @@ public class XmiInteroperabilityService {
                     eaTypeStr = "Composition";
                     subtypeStr = "Composite";
                 } else if ("CLASE_ASOCIACION".equalsIgnoreCase(rType)) {
-                    eaTypeStr = "Association";
+                    eaTypeStr = "Association Class";
                     subtypeStr = "Class";
+                    directionStr = "Unspecified";
                 }
+
                 propConn.setAttribute("ea_type", eaTypeStr);
+                propConn.setAttribute("direction", directionStr);
                 if (!subtypeStr.isEmpty()) propConn.setAttribute("subtype", subtypeStr);
-                if (r.getNombre() != null && !r.getNombre().isBlank()) propConn.setAttribute("name", r.getNombre());
+                if (r.getNombre() != null && !r.getNombre().isBlank() && !"CLASE_ASOCIACION".equalsIgnoreCase(rType)) {
+                    propConn.setAttribute("name", r.getNombre());
+                }
                 conn.appendChild(propConn);
 
                 connectorsElem.appendChild(conn);
@@ -714,11 +740,15 @@ public class XmiInteroperabilityService {
             }
 
             // 5. QUINTO PASO: Parsear Conectores Especiales de Enterprise Architect (<connector>)
+            record EaConnectorData(String connId, String srcId, String dstId, String cardOrig, String cardDest, String eaType, String subtype, String name) {}
+            Map<String, EaConnectorData> eaConnectorMap = new LinkedHashMap<>();
+
             NodeList connectorNodes = doc.getElementsByTagName("connector");
             for (int i = 0; i < connectorNodes.getLength(); i++) {
                 Node node = connectorNodes.item(i);
                 if (node.getNodeType() == Node.ELEMENT_NODE) {
                     Element connEl = (Element) node;
+                    String connId = getAttributeValue(connEl, "xmi:idref", "xmi:id", "id");
 
                     String srcId = null;
                     String dstId = null;
@@ -734,6 +764,10 @@ public class XmiInteroperabilityService {
                         srcId = getAttributeValue(s, "xmi:idref", "idref");
                         NodeList mult = s.getElementsByTagName("multiplicity");
                         if (mult.getLength() > 0) cardOrig = ((Element) mult.item(0)).getAttribute("value");
+                        if (cardOrig == null || cardOrig.isBlank()) {
+                            NodeList typeList = s.getElementsByTagName("type");
+                            if (typeList.getLength() > 0) cardOrig = ((Element) typeList.item(0)).getAttribute("multiplicity");
+                        }
                     }
 
                     NodeList dstList = connEl.getElementsByTagName("target");
@@ -742,6 +776,10 @@ public class XmiInteroperabilityService {
                         dstId = getAttributeValue(t, "xmi:idref", "idref");
                         NodeList mult = t.getElementsByTagName("multiplicity");
                         if (mult.getLength() > 0) cardDest = ((Element) mult.item(0)).getAttribute("value");
+                        if (cardDest == null || cardDest.isBlank()) {
+                            NodeList typeList = t.getElementsByTagName("type");
+                            if (typeList.getLength() > 0) cardDest = ((Element) typeList.item(0)).getAttribute("multiplicity");
+                        }
                     }
 
                     NodeList propList = connEl.getElementsByTagName("properties");
@@ -753,26 +791,67 @@ public class XmiInteroperabilityService {
                     }
 
                     if (srcId != null && dstId != null) {
-                        Clase cOrig = xmiIdToClaseMap.get(srcId);
-                        Clase cDest = xmiIdToClaseMap.get(dstId);
+                        EaConnectorData cData = new EaConnectorData(connId, srcId, dstId, cardOrig, cardDest, eaType, subtype, name);
+                        if (connId != null) eaConnectorMap.put(connId, cData);
+                    }
+                }
+            }
 
-                        if (cOrig != null && cDest != null) {
-                            String tipoRel = "ASOCIACION";
-                            if ("Generalization".equalsIgnoreCase(eaType)) {
-                                tipoRel = "GENERALIZACION";
-                            } else if ("Realisation".equalsIgnoreCase(eaType) || "Realization".equalsIgnoreCase(eaType)) {
-                                tipoRel = "REALIZACION";
-                            } else if ("Dependency".equalsIgnoreCase(eaType) || "Usage".equalsIgnoreCase(eaType)) {
-                                tipoRel = "DEPENDENCIA";
-                            } else if ("Aggregation".equalsIgnoreCase(eaType) || "Shared".equalsIgnoreCase(subtype)) {
-                                tipoRel = "AGREGACION";
-                            } else if ("Composition".equalsIgnoreCase(eaType) || "Composite".equalsIgnoreCase(subtype)) {
-                                tipoRel = "COMPOSICION";
-                            } else if ("Association Class".equalsIgnoreCase(eaType) || "AssociationClass".equalsIgnoreCase(eaType) || ("Association".equalsIgnoreCase(eaType) && "Class".equalsIgnoreCase(subtype))) {
-                                tipoRel = "CLASE_ASOCIACION";
-                            }
+            // Primer pase: Conectores directos entre clases
+            for (EaConnectorData cData : eaConnectorMap.values()) {
+                Clase cOrig = xmiIdToClaseMap.get(cData.srcId());
+                Clase cDest = xmiIdToClaseMap.get(cData.dstId());
 
-                            crearRelacionSiNoExiste(diagrama, cOrig, cDest, tipoRel, name, cardOrig, cardDest);
+                if (cOrig != null && cDest != null) {
+                    String tipoRel = "ASOCIACION";
+                    String eaType = cData.eaType();
+                    String subtype = cData.subtype();
+
+                    if ("Generalization".equalsIgnoreCase(eaType)) {
+                        tipoRel = "GENERALIZACION";
+                    } else if ("Realisation".equalsIgnoreCase(eaType) || "Realization".equalsIgnoreCase(eaType)) {
+                        tipoRel = "REALIZACION";
+                    } else if ("Dependency".equalsIgnoreCase(eaType) || "Usage".equalsIgnoreCase(eaType)) {
+                        tipoRel = "DEPENDENCIA";
+                    } else if ("Aggregation".equalsIgnoreCase(eaType) || "Shared".equalsIgnoreCase(subtype)) {
+                        tipoRel = "AGREGACION";
+                    } else if ("Composition".equalsIgnoreCase(eaType) || "Composite".equalsIgnoreCase(subtype)) {
+                        tipoRel = "COMPOSICION";
+                    } else if ("Association Class".equalsIgnoreCase(eaType) || "AssociationClass".equalsIgnoreCase(eaType) || ("Association".equalsIgnoreCase(eaType) && "Class".equalsIgnoreCase(subtype))) {
+                        tipoRel = "CLASE_ASOCIACION";
+                    }
+
+                    crearRelacionSiNoExiste(diagrama, cOrig, cDest, tipoRel, cData.name(), cData.cardOrig(), cData.cardDest());
+                }
+            }
+
+            // Segundo pase: Conectores de Clase de Asociación que apuntan a otro conector base
+            for (EaConnectorData cData : eaConnectorMap.values()) {
+                String eaType = cData.eaType();
+                String subtype = cData.subtype();
+                boolean isAssocClassConn = "Association Class".equalsIgnoreCase(eaType) || "AssociationClass".equalsIgnoreCase(eaType) || ("Association".equalsIgnoreCase(eaType) && "Class".equalsIgnoreCase(subtype));
+
+                if (isAssocClassConn) {
+                    // Caso 1: src es la Clase de Asociación y dst es el conector base
+                    if (xmiIdToClaseMap.containsKey(cData.srcId()) && eaConnectorMap.containsKey(cData.dstId())) {
+                        Clase cAssoc = xmiIdToClaseMap.get(cData.srcId());
+                        EaConnectorData baseConn = eaConnectorMap.get(cData.dstId());
+                        Clase cA = xmiIdToClaseMap.get(baseConn.srcId());
+                        Clase cB = xmiIdToClaseMap.get(baseConn.dstId());
+                        if (cAssoc != null && cA != null && cB != null) {
+                            crearRelacionSiNoExiste(diagrama, cA, cB, "ASOCIACION", "", baseConn.cardOrig(), baseConn.cardDest());
+                            crearRelacionSiNoExiste(diagrama, cAssoc, cB, "CLASE_ASOCIACION", cA.getNombre() + ":" + cB.getNombre(), "", "");
+                        }
+                    }
+                    // Caso 2: dst es la Clase de Asociación y src es el conector base
+                    else if (xmiIdToClaseMap.containsKey(cData.dstId()) && eaConnectorMap.containsKey(cData.srcId())) {
+                        Clase cAssoc = xmiIdToClaseMap.get(cData.dstId());
+                        EaConnectorData baseConn = eaConnectorMap.get(cData.srcId());
+                        Clase cA = xmiIdToClaseMap.get(baseConn.srcId());
+                        Clase cB = xmiIdToClaseMap.get(baseConn.dstId());
+                        if (cAssoc != null && cA != null && cB != null) {
+                            crearRelacionSiNoExiste(diagrama, cA, cB, "ASOCIACION", "", baseConn.cardOrig(), baseConn.cardDest());
+                            crearRelacionSiNoExiste(diagrama, cAssoc, cB, "CLASE_ASOCIACION", cA.getNombre() + ":" + cB.getNombre(), "", "");
                         }
                     }
                 }
@@ -789,8 +868,8 @@ public class XmiInteroperabilityService {
     private void crearRelacionSiNoExiste(DiagramaUml diagrama, Clase cOrig, Clase cDest, String tipoRel, String nombre, String cardOrig, String cardDest) {
         List<RelacionClase> existentes = relacionRepository.findByDiagramaId(diagrama.getId());
         boolean yaExiste = existentes.stream().anyMatch(r ->
-                r.getClaseOrigen().getId().equals(cOrig.getId()) &&
-                r.getClaseDestino().getId().equals(cDest.getId()) &&
+                ((r.getClaseOrigen().getId().equals(cOrig.getId()) && r.getClaseDestino().getId().equals(cDest.getId())) ||
+                 (r.getClaseOrigen().getId().equals(cDest.getId()) && r.getClaseDestino().getId().equals(cOrig.getId()) && "ASOCIACION".equalsIgnoreCase(tipoRel))) &&
                 r.getTipoRelacion().equalsIgnoreCase(tipoRel)
         );
 

@@ -112,7 +112,15 @@ public class XmiInteroperabilityService {
                 Element claseElement = doc.createElement("packagedElement");
                 String stereo = c.getEstereotipo() != null ? c.getEstereotipo().toUpperCase() : "CLASS";
                 String typeStr = "uml:Class";
-                if ("INTERFACE".equals(stereo)) typeStr = "uml:Interface";
+
+                RelacionClase assocClassRel = relaciones.stream().filter(r ->
+                    "CLASE_ASOCIACION".equalsIgnoreCase(r.getTipoRelacion()) &&
+                    r.getClaseOrigen().getId().equals(c.getId())
+                ).findFirst().orElse(null);
+
+                if (assocClassRel != null) {
+                    typeStr = "uml:AssociationClass";
+                } else if ("INTERFACE".equals(stereo)) typeStr = "uml:Interface";
                 else if ("ENUM".equals(stereo)) typeStr = "uml:Enumeration";
                 else if ("DATATYPE".equals(stereo)) typeStr = "uml:DataType";
                 else if ("PACKAGE".equals(stereo)) typeStr = "uml:Package";
@@ -171,6 +179,10 @@ public class XmiInteroperabilityService {
             }
 
             for (RelacionClase r : relaciones) {
+                if ("CLASE_ASOCIACION".equalsIgnoreCase(r.getTipoRelacion())) {
+                    continue; // En UML y EA, la clase de asociación ya se define en uml:AssociationClass y en el conector base
+                }
+
                 String srcGuid = toEaGuid("EAID", "CLASS_" + r.getClaseOrigen().getId());
                 String dstGuid = toEaGuid("EAID", "CLASS_" + r.getClaseDestino().getId());
                 String relGuid = toEaGuid("EAID", "REL_" + r.getId());
@@ -205,7 +217,7 @@ public class XmiInteroperabilityService {
                     depElement.setAttribute("client", srcGuid);
                     depElement.setAttribute("supplier", dstGuid);
                     packagedElement.appendChild(depElement);
-                } else if (!"CLASE_ASOCIACION".equalsIgnoreCase(r.getTipoRelacion())) {
+                } else {
                     Element assocElement = doc.createElement("packagedElement");
                     assocElement.setAttribute("xmi:type", "uml:Association");
                     assocElement.setAttribute("xmi:id", relGuid);
@@ -314,18 +326,26 @@ public class XmiInteroperabilityService {
                 cProps.setAttribute("scope", c.getVisibilidad() != null ? c.getVisibilidad() : "public");
                 cElem.appendChild(cProps);
 
+                Element extProps = doc.createElement("extendedProperties");
                 if (baseRelForThisClass != null) {
                     String baseConnGuid = toEaGuid("EAID", "REL_" + baseRelForThisClass.getId());
-                    Element extProps = doc.createElement("extendedProperties");
+                    extProps.setAttribute("conID", baseConnGuid);
                     extProps.setAttribute("associationconnector", baseConnGuid);
-                    cElem.appendChild(extProps);
+                } else {
+                    extProps.setAttribute("tagged", "0");
                 }
+                cElem.appendChild(extProps);
+
                 elementsElem.appendChild(cElem);
             }
             eaExtension.appendChild(elementsElem);
 
             Element connectorsElem = doc.createElement("connectors");
             for (RelacionClase r : relaciones) {
+                if ("CLASE_ASOCIACION".equalsIgnoreCase(r.getTipoRelacion())) {
+                    continue; // En EA las clases asociación se vinculan directamente a través del conector base con subtype="Class" y associationclass
+                }
+
                 Element conn = doc.createElement("connector");
                 String rType = r.getTipoRelacion();
                 String relGuid = toEaGuid("EAID", "REL_" + r.getId());
@@ -339,16 +359,7 @@ public class XmiInteroperabilityService {
                 conn.appendChild(srcConn);
 
                 Element dstConn = doc.createElement("target");
-                if ("CLASE_ASOCIACION".equalsIgnoreCase(rType)) {
-                    RelacionClase baseRel = findBaseRelForAssocClass(r, relaciones);
-                    if (baseRel != null) {
-                        dstConn.setAttribute("xmi:idref", toEaGuid("EAID", "REL_" + baseRel.getId()));
-                    } else {
-                        dstConn.setAttribute("xmi:idref", toEaGuid("EAID", "CLASS_" + r.getClaseDestino().getId()));
-                    }
-                } else {
-                    dstConn.setAttribute("xmi:idref", toEaGuid("EAID", "CLASS_" + r.getClaseDestino().getId()));
-                }
+                dstConn.setAttribute("xmi:idref", toEaGuid("EAID", "CLASS_" + r.getClaseDestino().getId()));
 
                 Element dstMult = doc.createElement("type");
                 dstMult.setAttribute("multiplicity", r.getCardinalidadDestino() != null ? r.getCardinalidadDestino() : "");
@@ -365,6 +376,12 @@ public class XmiInteroperabilityService {
                 String subtypeStr = "";
                 String directionStr = "Unspecified";
 
+                // Verificar si esta relación tiene una Clase de Asociación vinculada
+                RelacionClase assocClassForThisBase = relaciones.stream().filter(ra ->
+                    "CLASE_ASOCIACION".equalsIgnoreCase(ra.getTipoRelacion()) &&
+                    r.equals(findBaseRelForAssocClass(ra, relaciones))
+                ).findFirst().orElse(null);
+
                 if ("GENERALIZACION".equalsIgnoreCase(rType)) {
                     eaTypeStr = "Generalization";
                     directionStr = "Source -> Destination";
@@ -380,7 +397,7 @@ public class XmiInteroperabilityService {
                 } else if ("COMPOSICION".equalsIgnoreCase(rType)) {
                     eaTypeStr = "Composition";
                     subtypeStr = "Composite";
-                } else if ("CLASE_ASOCIACION".equalsIgnoreCase(rType)) {
+                } else if (assocClassForThisBase != null) {
                     eaTypeStr = "Association";
                     subtypeStr = "Class";
                     directionStr = "Unspecified";
@@ -389,24 +406,16 @@ public class XmiInteroperabilityService {
                 propConn.setAttribute("ea_type", eaTypeStr);
                 propConn.setAttribute("direction", directionStr);
                 if (!subtypeStr.isEmpty()) propConn.setAttribute("subtype", subtypeStr);
-                if (r.getNombre() != null && !r.getNombre().isBlank() && !"CLASE_ASOCIACION".equalsIgnoreCase(rType)) {
+                if (r.getNombre() != null && !r.getNombre().isBlank()) {
                     propConn.setAttribute("name", r.getNombre());
                 }
                 conn.appendChild(propConn);
 
-                // Si esta relación es una relación base asociada a una CLASE_ASOCIACION, agregar associationclass
-                if (!"CLASE_ASOCIACION".equalsIgnoreCase(rType)) {
-                    RelacionClase assocClassForThisBase = relaciones.stream().filter(ra ->
-                        "CLASE_ASOCIACION".equalsIgnoreCase(ra.getTipoRelacion()) &&
-                        r.equals(findBaseRelForAssocClass(ra, relaciones))
-                    ).findFirst().orElse(null);
-
-                    if (assocClassForThisBase != null) {
-                        String assocClassGuid = toEaGuid("EAID", "CLASS_" + assocClassForThisBase.getClaseOrigen().getId());
-                        Element extProps = doc.createElement("extendedProperties");
-                        extProps.setAttribute("associationclass", assocClassGuid);
-                        conn.appendChild(extProps);
-                    }
+                if (assocClassForThisBase != null) {
+                    String assocClassGuid = toEaGuid("EAID", "CLASS_" + assocClassForThisBase.getClaseOrigen().getId());
+                    Element extProps = doc.createElement("extendedProperties");
+                    extProps.setAttribute("associationclass", assocClassGuid);
+                    conn.appendChild(extProps);
                 }
 
                 connectorsElem.appendChild(conn);
@@ -438,9 +447,9 @@ public class XmiInteroperabilityService {
                 dObj.setAttribute("xmi:idref", cGuid);
                 dObj.setAttribute("seqno", String.valueOf(seqNo++));
                 int left = (int) Math.round(c.getPosX());
-                int top = -(int) Math.round(c.getPosY());
+                int top = (int) Math.round(c.getPosY());
                 int right = left + 200;
-                int bottom = top - 130;
+                int bottom = top + 130;
                 dObj.setAttribute("geometry", "Left=" + left + ";Top=" + top + ";Right=" + right + ";Bottom=" + bottom + ";");
                 diagElements.appendChild(dObj);
             }
@@ -448,6 +457,7 @@ public class XmiInteroperabilityService {
 
             Element diagLinks = doc.createElement("links");
             for (RelacionClase r : relaciones) {
+                if ("CLASE_ASOCIACION".equalsIgnoreCase(r.getTipoRelacion())) continue;
                 Element dLink = doc.createElement("link");
                 String eaConnId = toEaGuid("EAID", "REL_" + r.getId());
                 dLink.setAttribute("xmi:idref", eaConnId);

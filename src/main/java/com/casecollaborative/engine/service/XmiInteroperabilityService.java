@@ -1069,27 +1069,39 @@ public class XmiInteroperabilityService {
     }
 
     private String parseDataType(Element propElement) {
+        String resultado = "String";
+
         NodeList typeNodes = propElement.getElementsByTagName("type");
         if (typeNodes.getLength() > 0) {
             Element typeEl = (Element) typeNodes.item(0);
             String href = typeEl.getAttribute("href");
             if (href != null && href.contains("#")) {
-                return href.substring(href.lastIndexOf("#") + 1);
+                resultado = href.substring(href.lastIndexOf("#") + 1);
+            } else {
+                String name = typeEl.getAttribute("name");
+                if (name != null && !name.isEmpty()) resultado = name;
             }
-            String name = typeEl.getAttribute("name");
-            if (name != null && !name.isEmpty()) return name;
+        } else {
+            NodeList propNodes = propElement.getElementsByTagName("properties");
+            if (propNodes.getLength() > 0) {
+                Element pEl = (Element) propNodes.item(0);
+                String type = pEl.getAttribute("type");
+                if (type != null && !type.isEmpty()) resultado = type;
+            } else {
+                String typeAttr = propElement.getAttribute("type");
+                if (typeAttr != null && !typeAttr.isEmpty()) resultado = typeAttr;
+            }
         }
 
-        NodeList propNodes = propElement.getElementsByTagName("properties");
-        if (propNodes.getLength() > 0) {
-            Element pEl = (Element) propNodes.item(0);
-            String type = pEl.getAttribute("type");
-            if (type != null && !type.isEmpty()) return type;
+        return limpiarTipoDatoEa(resultado);
+    }
+
+    private String limpiarTipoDatoEa(String tipo) {
+        if (tipo == null || tipo.isBlank()) return "String";
+        String t = tipo.trim();
+        while (t.startsWith("EAJava_") || t.startsWith("EAUML_") || t.startsWith("EAC_")) {
+            t = t.substring(t.indexOf('_') + 1);
         }
-
-        String typeAttr = propElement.getAttribute("type");
-        if (typeAttr != null && !typeAttr.isEmpty()) return typeAttr;
-
-        return "String";
+        return t.trim().isEmpty() ? "String" : t.trim();
     }
 }

@@ -7,14 +7,15 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
   sql:
     init:
-      mode: never
+      mode: always
+      schema-locations: classpath:schema.sql
 
 application:
   security:

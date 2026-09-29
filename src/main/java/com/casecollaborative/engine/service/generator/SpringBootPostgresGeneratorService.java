@@ -89,7 +89,19 @@ public class SpringBootPostgresGeneratorService implements BackendGeneratorStrat
 
         // Many-to-Many Join Tables
         for (RelacionClase rel : relaciones) {
-            if ("*".equals(rel.getCardinalidadOrigen()) && "*".equals(rel.getCardinalidadDestino())) {
+            if ("HERENCIA".equalsIgnoreCase(rel.getTipoRelacion()) || "CLASE_ASOCIACION".equalsIgnoreCase(rel.getTipoRelacion())) {
+                continue;
+            }
+            // Si existe una clase de asociación vinculada a esta relación, NO generar tabla intermedia genérica
+            boolean hasAssocClass = relaciones.stream().anyMatch(ar -> 
+                "CLASE_ASOCIACION".equalsIgnoreCase(ar.getTipoRelacion()) &&
+                (ar.getClaseDestino().getId().equals(rel.getClaseOrigen().getId()) || ar.getClaseDestino().getId().equals(rel.getClaseDestino().getId()))
+            );
+            if (hasAssocClass) {
+                continue;
+            }
+
+            if (isMany(rel.getCardinalidadOrigen()) && isMany(rel.getCardinalidadDestino())) {
                 String tableA = sanitizeIdentifier(rel.getClaseOrigen().getNombre());
                 String tableB = sanitizeIdentifier(rel.getClaseDestino().getNombre());
                 String joinTableName = tableA + "_" + tableB;
@@ -109,19 +121,82 @@ public class SpringBootPostgresGeneratorService implements BackendGeneratorStrat
         return ddl.toString();
     }
 
+    private List<Clase> getAssociationPeers(Clase assocClass, List<RelacionClase> relaciones) {
+        List<Clase> peers = new ArrayList<>();
+        for (RelacionClase r : relaciones) {
+            if ("CLASE_ASOCIACION".equalsIgnoreCase(r.getTipoRelacion())) {
+                Clase dest = null;
+                if (r.getClaseOrigen().getId().equals(assocClass.getId())) {
+                    dest = r.getClaseDestino();
+                } else if (r.getClaseDestino().getId().equals(assocClass.getId())) {
+                    dest = r.getClaseOrigen();
+                }
+                if (dest != null) {
+                    if (!peers.contains(dest)) peers.add(dest);
+                    for (RelacionClase rb : relaciones) {
+                        if (!"CLASE_ASOCIACION".equalsIgnoreCase(rb.getTipoRelacion()) && !"HERENCIA".equalsIgnoreCase(rb.getTipoRelacion())) {
+                            if (rb.getClaseOrigen().getId().equals(dest.getId())) {
+                                if (!peers.contains(rb.getClaseDestino()) && !rb.getClaseDestino().getId().equals(assocClass.getId())) {
+                                    peers.add(rb.getClaseDestino());
+                                }
+                            } else if (rb.getClaseDestino().getId().equals(dest.getId())) {
+                                if (!peers.contains(rb.getClaseOrigen()) && !rb.getClaseOrigen().getId().equals(assocClass.getId())) {
+                                    peers.add(rb.getClaseOrigen());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return peers;
+    }
+
+    private boolean isMany(String cardinality) {
+        if (cardinality == null) return false;
+        String c = cardinality.trim().toLowerCase();
+        return c.equals("*") || c.equals("n") || c.equals("m") || c.contains("*") || c.contains("n") || c.contains("m") || c.endsWith("..*");
+    }
+
+    private boolean isOne(String cardinality) {
+        if (cardinality == null) return true;
+        String c = cardinality.trim().toLowerCase();
+        return c.equals("1") || c.equals("0..1") || c.equals("1..1") || (!isMany(c));
+    }
+
     private boolean hasForeignKeys(Clase clase, List<RelacionClase> relaciones) {
+        if (!getAssociationPeers(clase, relaciones).isEmpty()) {
+            return true;
+        }
         return relaciones.stream().anyMatch(r ->
             (r.getClaseOrigen().getId().equals(clase.getId()) && "HERENCIA".equalsIgnoreCase(r.getTipoRelacion())) ||
-            (r.getClaseOrigen().getId().equals(clase.getId()) && "1".equals(r.getCardinalidadOrigen()) && "*".equals(r.getCardinalidadDestino())) ||
-            (r.getClaseDestino().getId().equals(clase.getId()) && "1".equals(r.getCardinalidadDestino()) && "*".equals(r.getCardinalidadOrigen()))
+            (r.getClaseOrigen().getId().equals(clase.getId()) && isOne(r.getCardinalidadDestino()) && isMany(r.getCardinalidadOrigen())) ||
+            (r.getClaseDestino().getId().equals(clase.getId()) && isOne(r.getCardinalidadOrigen()) && isMany(r.getCardinalidadDestino()))
         );
     }
 
     private void appendForeignKeys(StringBuilder ddl, Clase clase, List<RelacionClase> relaciones) {
+        List<Clase> assocPeers = getAssociationPeers(clase, relaciones);
+        if (!assocPeers.isEmpty()) {
+            for (int i = 0; i < assocPeers.size(); i++) {
+                Clase peer = assocPeers.get(i);
+                String otherTable = sanitizeIdentifier(peer.getNombre());
+                ddl.append("    ").append(otherTable).append("_id BIGINT,\n");
+                ddl.append("    CONSTRAINT fk_").append(sanitizeIdentifier(clase.getNombre())).append("_").append(otherTable)
+                   .append(" FOREIGN KEY (").append(otherTable).append("_id) REFERENCES ").append(otherTable).append("(id) ON DELETE CASCADE");
+                if (i < assocPeers.size() - 1) {
+                    ddl.append(",\n");
+                } else {
+                    ddl.append("\n");
+                }
+            }
+            return;
+        }
+
         List<RelacionClase> fks = relaciones.stream()
             .filter(r -> (r.getClaseOrigen().getId().equals(clase.getId()) && "HERENCIA".equalsIgnoreCase(r.getTipoRelacion())) ||
-                         (r.getClaseOrigen().getId().equals(clase.getId()) && "1".equals(r.getCardinalidadOrigen()) && "*".equals(r.getCardinalidadDestino())) ||
-                         (r.getClaseDestino().getId().equals(clase.getId()) && "1".equals(r.getCardinalidadDestino()) && "*".equals(r.getCardinalidadOrigen())))
+                         (r.getClaseOrigen().getId().equals(clase.getId()) && isOne(r.getCardinalidadDestino()) && isMany(r.getCardinalidadOrigen())) ||
+                         (r.getClaseDestino().getId().equals(clase.getId()) && isOne(r.getCardinalidadOrigen()) && isMany(r.getCardinalidadDestino())))
             .collect(Collectors.toList());
 
         for (int i = 0; i < fks.size(); i++) {
@@ -466,7 +541,7 @@ public class SpringBootPostgresGeneratorService implements BackendGeneratorStrat
             sb.append(imp).append("\n");
         }
 
-        boolean hasManyToMany = relaciones.stream().anyMatch(r -> "*".equals(r.getCardinalidadOrigen()) && "*".equals(r.getCardinalidadDestino()));
+        boolean hasManyToMany = relaciones.stream().anyMatch(r -> !"HERENCIA".equalsIgnoreCase(r.getTipoRelacion()) && !"CLASE_ASOCIACION".equalsIgnoreCase(r.getTipoRelacion()) && isMany(r.getCardinalidadOrigen()) && isMany(r.getCardinalidadDestino()));
         if (hasManyToMany) {
             sb.append("import java.util.List;\n");
             sb.append("import java.util.ArrayList;\n");
@@ -512,11 +587,28 @@ public class SpringBootPostgresGeneratorService implements BackendGeneratorStrat
             sb.append("    private ").append(javaType).append(" ").append(fieldName).append(";\n\n");
         }
 
-        for (RelacionClase rel : relaciones) {
-            if ("HERENCIA".equalsIgnoreCase(rel.getTipoRelacion())) continue;
+        List<Clase> assocPeers = getAssociationPeers(clase, relaciones);
+        if (!assocPeers.isEmpty()) {
+            for (Clase peer : assocPeers) {
+                String targetClass = peer.getNombre();
+                String targetField = sanitizeCamelCase(targetClass);
+                sb.append("    @ManyToOne(fetch = FetchType.LAZY)\n");
+                sb.append("    @JoinColumn(name = \"").append(sanitizeIdentifier(targetClass)).append("_id\")\n");
+                sb.append("    private ").append(targetClass).append(" ").append(targetField).append(";\n\n");
+            }
+        }
 
-            if ("*".equals(rel.getCardinalidadOrigen()) && "*".equals(rel.getCardinalidadDestino())) {
-                if (rel.getClaseOrigen().getId().equals(clase.getId())) {
+        for (RelacionClase rel : relaciones) {
+            if ("HERENCIA".equalsIgnoreCase(rel.getTipoRelacion()) || "CLASE_ASOCIACION".equalsIgnoreCase(rel.getTipoRelacion())) continue;
+
+            if (isMany(rel.getCardinalidadOrigen()) && isMany(rel.getCardinalidadDestino())) {
+                boolean hasAssocClass = relaciones.stream().anyMatch(r ->
+                    "CLASE_ASOCIACION".equalsIgnoreCase(r.getTipoRelacion()) &&
+                    (r.getClaseOrigen().getId().equals(rel.getClaseOrigen().getId()) || r.getClaseOrigen().getId().equals(rel.getClaseDestino().getId()) ||
+                     r.getClaseDestino().getId().equals(rel.getClaseOrigen().getId()) || r.getClaseDestino().getId().equals(rel.getClaseDestino().getId()))
+                );
+
+                if (!hasAssocClass && rel.getClaseOrigen().getId().equals(clase.getId())) {
                     String targetClass = rel.getClaseDestino().getNombre();
                     String targetField = sanitizeCamelCase(targetClass) + "List";
                     String joinTable = sanitizeIdentifier(clase.getNombre()) + "_" + sanitizeIdentifier(targetClass);
@@ -529,6 +621,22 @@ public class SpringBootPostgresGeneratorService implements BackendGeneratorStrat
                     sb.append("    )\n");
                     sb.append("    @Builder.Default\n");
                     sb.append("    private List<").append(targetClass).append("> ").append(targetField).append(" = new ArrayList<>();\n\n");
+                }
+            } else if (isOne(rel.getCardinalidadDestino()) && isMany(rel.getCardinalidadOrigen())) {
+                if (rel.getClaseOrigen().getId().equals(clase.getId())) {
+                    String targetClass = rel.getClaseDestino().getNombre();
+                    String targetField = sanitizeCamelCase(targetClass);
+                    sb.append("    @ManyToOne(fetch = FetchType.LAZY)\n");
+                    sb.append("    @JoinColumn(name = \"").append(sanitizeIdentifier(targetClass)).append("_id\")\n");
+                    sb.append("    private ").append(targetClass).append(" ").append(targetField).append(";\n\n");
+                }
+            } else if (isOne(rel.getCardinalidadOrigen()) && isMany(rel.getCardinalidadDestino())) {
+                if (rel.getClaseDestino().getId().equals(clase.getId())) {
+                    String targetClass = rel.getClaseOrigen().getNombre();
+                    String targetField = sanitizeCamelCase(targetClass);
+                    sb.append("    @ManyToOne(fetch = FetchType.LAZY)\n");
+                    sb.append("    @JoinColumn(name = \"").append(sanitizeIdentifier(targetClass)).append("_id\")\n");
+                    sb.append("    private ").append(targetClass).append(" ").append(targetField).append(";\n\n");
                 }
             }
         }

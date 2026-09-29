@@ -187,6 +187,25 @@ public class SesionColaborativaController {
                     clase.setVisibilidad(cMap.get("visibilidad") != null ? cMap.get("visibilidad").toString() : "public");
                     clase.setPosX(cMap.get("posX") != null ? Double.parseDouble(cMap.get("posX").toString()) : 100.0);
                     clase.setPosY(cMap.get("posY") != null ? Double.parseDouble(cMap.get("posY").toString()) : 100.0);
+
+                    // Métodos de la clase
+                    if (cMap.get("metodos") instanceof List<?> metList) {
+                        List<Map<String, Object>> mList = new ArrayList<>();
+                        int mOrd = 0;
+                        for (Object mObj : metList) {
+                            if (mObj instanceof Map<?, ?> mMap) {
+                                Map<String, Object> cleanMap = new HashMap<>();
+                                cleanMap.put("id", mMap.get("id") != null ? mMap.get("id").toString() : "met-" + System.currentTimeMillis() + "-" + (mOrd++));
+                                cleanMap.put("nombre", mMap.get("nombre") != null ? mMap.get("nombre").toString() : "metodo");
+                                cleanMap.put("tipoRetorno", mMap.get("tipoRetorno") != null ? mMap.get("tipoRetorno").toString() : (mMap.get("tipo") != null ? mMap.get("tipo").toString() : "void"));
+                                cleanMap.put("visibilidad", mMap.get("visibilidad") != null ? mMap.get("visibilidad").toString() : "public");
+                                cleanMap.put("orden", mMap.get("orden") != null ? Integer.parseInt(mMap.get("orden").toString()) : mOrd++);
+                                mList.add(cleanMap);
+                            }
+                        }
+                        clase.setMetodos(mList);
+                    }
+
                     clase = claseRepository.save(clase);
 
                     if (clientId != null) {

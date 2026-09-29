@@ -63,12 +63,20 @@ public class ImageDiagramImportService {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    public record MetodoParsed(
+            String nombre,
+            @JsonProperty("tipoRetorno") String tipoRetorno,
+            String visibilidad) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record ClaseParsed(
             String nombre,
             String estereotipo,
             Double posX,
             Double posY,
-            List<AtributoParsed> atributos) {
+            List<AtributoParsed> atributos,
+            List<MetodoParsed> metodos) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -136,7 +144,7 @@ public class ImageDiagramImportService {
         }
         claseRepository.deleteAll(clasesPrevias);
 
-        // 3. Crear Clases y Atributos extraídos
+        // 3. Crear Clases, Atributos y Métodos extraídos
         Map<String, Clase> nombreToClaseMap = new HashMap<>();
         int totalAtributos = 0;
         int index = 0;
@@ -158,6 +166,28 @@ public class ImageDiagramImportService {
             clase.setEstereotipo(estereotipo);
             clase.setPosX(posX);
             clase.setPosY(posY);
+
+            // Métodos
+            if (cp.metodos() != null && !cp.metodos().isEmpty()) {
+                List<Map<String, Object>> mList = new ArrayList<>();
+                int mOrd = 0;
+                for (MetodoParsed mp : cp.metodos()) {
+                    if (mp.nombre() == null || mp.nombre().isBlank())
+                        continue;
+                    String mNombre = mp.nombre().replaceAll("[()\\s]", "").trim();
+                    if (mNombre.isBlank())
+                        continue;
+                    Map<String, Object> mMap = new HashMap<>();
+                    mMap.put("id", "met-" + System.currentTimeMillis() + "-" + (mOrd++));
+                    mMap.put("nombre", mNombre);
+                    mMap.put("tipoRetorno", normalizarTipoDato(mp.tipoRetorno()));
+                    mMap.put("visibilidad", normalizarVisibilidad(mp.visibilidad()));
+                    mMap.put("orden", mOrd++);
+                    mList.add(mMap);
+                }
+                clase.setMetodos(mList);
+            }
+
             clase = claseRepository.save(clase);
             nombreToClaseMap.put(nombreClase.toLowerCase(), clase);
 
@@ -234,7 +264,7 @@ public class ImageDiagramImportService {
 
             String prompt = """
                     Analiza la imagen adjunta, la cual contiene un diagrama de clases UML o modelo de base de datos relacional (puede ser digital, captura de pantalla o un boceto/dibujo hecho a mano en papel o pizarra).
-                    Extrae con máxima precisión todas las clases, atributos y relaciones presentes en el diagrama.
+                    Extrae con máxima precisión todas las clases, atributos, métodos/operaciones y relaciones presentes en el diagrama.
 
                     Devuelve ÚNICAMENTE un objeto JSON con la siguiente estructura estricta:
                     {
@@ -251,6 +281,13 @@ public class ImageDiagramImportService {
                               "visibilidad": "private" | "public" | "protected" | "package",
                               "esPk": true | false
                             }
+                          ],
+                          "metodos": [
+                            {
+                              "nombre": "nombreMetodoSinParentesis",
+                              "tipoRetorno": "void" | "String" | "Integer" | "Double" | "Boolean" | "Date",
+                              "visibilidad": "public" | "private" | "protected" | "package"
+                            }
                           ]
                         }
                       ],
@@ -258,9 +295,9 @@ public class ImageDiagramImportService {
                         {
                           "origen": "NombreClaseOrigen",
                           "destino": "NombreClaseDestino",
-                          "tipo": "ASOCIACION" | "ASOCIACION_DIRIGIDA" | "AGREGACION" | "COMPOSICION" | "GENERALIZACION" | "REALIZACION" | "DEPENDENCIA",
-                          "cardinalidadOrigen": "1" | "0..1" | "*" | "1..*",
-                          "cardinalidadDestino": "1" | "0..1" | "*" | "1..*",
+                          "tipo": "ASOCIACION" | "ASOCIACION_DIRIGIDA" | "AGREGACION" | "COMPOSICION" | "GENERALIZACION" | "REALIZACION" | "DEPENDENCIA" | "CLASE_ASOCIACION",
+                          "cardinalidadOrigen": "1" | "0..1" | "*" | "1..*" | "0..*",
+                          "cardinalidadDestino": "1" | "0..1" | "*" | "1..*" | "0..*",
                           "nombre": "nombreRolOpcional"
                         }
                       ]
@@ -269,9 +306,14 @@ public class ImageDiagramImportService {
                     Reglas críticas:
                     1. Asigna posiciones posX y posY estimadas (en un lienzo de 1200x800) respetando la distribución espacial relativa de las clases en la foto.
                     2. Si un atributo se llama 'id' o tiene un icono de llave / PK o subrayado, marca esPk: true.
-                    3. Si hay herencia (flecha con triángulo blanco apuntando al padre), el tipo es GENERALIZACION, donde origen es el hijo y destino es el padre.
-                    4. Si hay rombo relleno (diamante negro), es COMPOSICION. Si es rombo blanco, es AGREGACION.
-                    5. Devuelve solo el JSON válido sin bloques markdown ni texto adicional.
+                    3. Si una clase (ej. DetalleVenta, Detalle_Devolucion) está unida mediante una línea punteada/segmentada (---) a una línea de asociación entre dos clases, es una CLASE DE ASOCIACIÓN:
+                       - Asegúrate de incluir la clase en "clases" con sus atributos y métodos.
+                       - Incluye la relación continua base entre las dos clases principales (ej. Venta <-> Producto).
+                       - Agrega una relación con tipo: "CLASE_ASOCIACION" donde "origen" es la clase de asociación (ej. "DetalleVenta") y "destino" es una de las clases de la relación base (ej. "Producto" o "Venta").
+                    4. Extrae TODOS los métodos/operaciones de cada clase si existen en su compartimento inferior (ej. crear(), eliminar()), quitando los paréntesis en el campo "nombre".
+                    5. Si hay herencia (flecha con triángulo blanco apuntando al padre), el tipo es GENERALIZACION, donde origen es el hijo y destino es el padre.
+                    6. Si hay rombo relleno (diamante negro), es COMPOSICION. Si es rombo blanco, es AGREGACION.
+                    7. Devuelve solo el JSON válido sin bloques markdown ni texto adicional.
                     """;
 
             Map<String, Object> inlineData = Map.of(
@@ -493,6 +535,8 @@ public class ImageDiagramImportService {
             return "REALIZACION";
         if (r.contains("DEPEN"))
             return "DEPENDENCIA";
+        if (r.contains("CLASE_ASOCIACION") || r.contains("ASOCIACION_CLASE") || r.contains("ASSOCIATION_CLASS") || r.contains("INTERMEDIA"))
+            return "CLASE_ASOCIACION";
         if (r.contains("DIRIG"))
             return "ASOCIACION_DIRIGIDA";
         return "ASOCIACION";

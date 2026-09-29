@@ -51,4 +51,37 @@ public class Clase {
 
     @Column(name = "bloqueado_en")
     private ZonedDateTime bloqueadoEn;
+
+    @Column(name = "metodos_json", columnDefinition = "TEXT")
+    private String metodosJson;
+
+    @Transient
+    private java.util.List<java.util.Map<String, Object>> metodos;
+
+    public java.util.List<java.util.Map<String, Object>> getMetodos() {
+        if (metodos != null) return metodos;
+        if (metodosJson == null || metodosJson.isBlank()) {
+            return new java.util.ArrayList<>();
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            return mapper.readValue(metodosJson, new com.fasterxml.jackson.core.type.TypeReference<java.util.List<java.util.Map<String, Object>>>() {});
+        } catch (Exception e) {
+            return new java.util.ArrayList<>();
+        }
+    }
+
+    public void setMetodos(java.util.List<java.util.Map<String, Object>> metodos) {
+        this.metodos = metodos;
+        if (metodos == null || metodos.isEmpty()) {
+            this.metodosJson = null;
+        } else {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                this.metodosJson = mapper.writeValueAsString(metodos);
+            } catch (Exception e) {
+                this.metodosJson = null;
+            }
+        }
+    }
 }

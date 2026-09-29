@@ -6,7 +6,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/case_collaborative_db
     username: postgres
-    password: ${DB_PASSWORD:}
+    password: ${DB_PASSWORD:8521}
     driver-class-name: org.postgresql.Driver
 
     hikari:
@@ -36,8 +36,8 @@ server:
 application:
   security:
     jwt:
-      secret-key: ${JWT_SECRET}
+      secret-key: ${JWT_SECRET:case_collaborative_engine_secret_key_super_segura_para_firmar_jwt_tokens_1234567890}
       expiration: 86400000
 
 gemini:
-  api-key: ${GEMINI_API_KEY}
+  api-key: ${GEMINI_API_KEY:}

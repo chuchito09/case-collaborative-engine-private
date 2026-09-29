@@ -342,6 +342,12 @@
                         </div>
                         <span>Dependency</span>
                     </div>
+                    <div class="ea-tool-item" data-action="relation" data-type="CLASE_ASOCIACION">
+                        <div class="ea-tool-icon" style="color: #38BDF8;">
+                            <span class="material-icons">mediation</span>
+                        </div>
+                        <span>Association Class</span>
+                    </div>
                 </div>
             </div>
             
@@ -354,23 +360,23 @@
 
         <!-- Barra flotante de acciones rápidas sobre la clase seleccionada -->
         <div id="class-quick-actions" class="floating-class-actions hidden">
-            <button id="btn-quick-inspect" title="Inspeccionar y editar atributos">
+            <button type="button" id="btn-quick-inspect" title="Inspeccionar y editar atributos">
                 <span class="material-icons" style="font-size: 14px; color: var(--accent-primary);">tune</span> Inspeccionar / Atributos
             </button>
-            <button id="btn-quick-connect" title="Crear relación desde esta clase">
+            <button type="button" id="btn-quick-connect" title="Crear relación desde esta clase">
                 <span class="material-icons" style="font-size: 14px; color: var(--accent-secondary);">timeline</span> Relacionar
             </button>
-            <button id="btn-quick-delete" title="Eliminar clase del diagrama" style="color: var(--status-danger);">
+            <button type="button" id="btn-quick-delete" title="Eliminar clase del diagrama" style="color: var(--status-danger);">
                 <span class="material-icons" style="font-size: 14px;">delete</span>
             </button>
         </div>
 
         <!-- Barra flotante de acciones rápidas sobre la relación seleccionada -->
         <div id="relation-quick-actions" class="floating-class-actions hidden">
-            <button id="btn-quick-inspect-rel" title="Editar propiedades de la relación">
+            <button type="button" id="btn-quick-inspect-rel" title="Editar propiedades de la relación">
                 <span class="material-icons" style="font-size: 14px; color: #38BDF8;">edit</span> Editar Relación
             </button>
-            <button id="btn-quick-delete-rel" title="Eliminar relación del diagrama" style="color: var(--status-danger);">
+            <button type="button" id="btn-quick-delete-rel" title="Eliminar relación del diagrama" style="color: var(--status-danger);">
                 <span class="material-icons" style="font-size: 14px;">delete</span>
             </button>
         </div>
@@ -383,15 +389,15 @@
                         <span class="material-icons" style="color: #38BDF8;">timeline</span>
                         <h3 style="margin: 0; font-size: 16px;">Propiedades de la Relación UML</h3>
                     </div>
-                    <button class="btn btn-ghost" id="btn-close-rel-inspector" style="padding: 4px;">
+                    <button type="button" class="btn btn-ghost" id="btn-close-rel-inspector" style="padding: 4px;">
                         <span class="material-icons">close</span>
                     </button>
                 </div>
 
-                <div class="flex flex-col gap-3">
+                <form autocomplete="off" onsubmit="return false;" class="flex flex-col gap-3">
                     <div class="flex flex-col gap-1">
                         <label class="text-xs text-secondary">Nombre / Rol de la Relación</label>
-                        <input type="text" id="inspector-rel-name" placeholder="Ej. gestiona, contiene, 1..*">
+                        <input type="text" id="inspector-rel-name" name="uml_rel_name" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Ej. gestiona, contiene">
                     </div>
 
                     <div class="flex flex-col gap-1">
@@ -404,28 +410,29 @@
                             <option value="AGREGACION">Agregación (Aggregate)</option>
                             <option value="REALIZACION">Realización (Realize)</option>
                             <option value="DEPENDENCIA">Dependencia (Dependency)</option>
+                            <option value="CLASE_ASOCIACION">Clase de Asociación (Association Class)</option>
                         </select>
                     </div>
 
                     <div class="grid-2" style="gap: 12px;">
                         <div class="flex flex-col gap-1">
                             <label class="text-xs text-secondary">Multiplicidad Origen</label>
-                            <input type="text" id="inspector-rel-card-orig" placeholder="1, 0..1, *, 1..*">
+                            <input type="text" id="inspector-rel-card-orig" name="uml_rel_card_from" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="1, 0..1, *, 1..*">
                         </div>
                         <div class="flex flex-col gap-1">
                             <label class="text-xs text-secondary">Multiplicidad Destino</label>
-                            <input type="text" id="inspector-rel-card-dest" placeholder="1, 0..1, *, 1..*">
+                            <input type="text" id="inspector-rel-card-dest" name="uml_rel_card_to" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="1, 0..1, *, 1..*">
                         </div>
                     </div>
-                </div>
+                </form>
 
                 <div class="flex justify-between items-center" style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-top: 8px;">
-                    <button class="btn btn-ghost" id="btn-inspector-delete-rel" style="color: var(--status-danger); font-size: 13px;">
+                    <button type="button" class="btn btn-ghost" id="btn-inspector-delete-rel" style="color: var(--status-danger); font-size: 13px;">
                         <span class="material-icons" style="font-size: 16px;">delete</span> Eliminar Relación
                     </button>
                     <div class="flex gap-2">
-                        <button class="btn btn-secondary" id="btn-inspector-cancel-rel">Cancelar</button>
-                        <button class="btn btn-primary" id="btn-inspector-save-rel">Guardar Cambios</button>
+                        <button type="button" class="btn btn-secondary" id="btn-inspector-cancel-rel">Cancelar</button>
+                        <button type="button" class="btn btn-primary" id="btn-inspector-save-rel">Guardar Cambios</button>
                     </div>
                 </div>
             </div>
@@ -439,80 +446,121 @@
                         <span class="material-icons" style="color: var(--accent-primary);">tune</span>
                         <h3 style="margin: 0; font-size: 16px;">Propiedades de la Clase UML</h3>
                     </div>
-                    <button class="btn btn-ghost" id="btn-close-inspector" style="padding: 4px;">
+                    <button type="button" class="btn btn-ghost" id="btn-close-inspector" style="padding: 4px;">
                         <span class="material-icons">close</span>
                     </button>
                 </div>
 
-                <!-- Datos Principales de la Clase -->
-                <div class="grid-2" style="gap: 12px;">
-                    <div class="flex flex-col gap-1">
-                        <label class="text-xs text-secondary">Nombre de la Clase</label>
-                        <input type="text" id="inspector-class-name" placeholder="Ej. Cliente">
-                    </div>
-                    <div class="flex flex-col gap-1">
-                        <label class="text-xs text-secondary">Estereotipo / Tipo</label>
-                        <select id="inspector-class-stereotype" style="background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); padding: 8px; border-radius: 6px;">
-                            <option value="CLASS">Class (Clase Estándar)</option>
-                            <option value="INTERFACE">&lt;&lt;interface&gt;&gt;</option>
-                            <option value="ENUM">&lt;&lt;enumeration&gt;&gt;</option>
-                            <option value="DATATYPE">&lt;&lt;dataType&gt;&gt;</option>
-                            <option value="PACKAGE">&lt;&lt;package&gt;&gt;</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Sección de Atributos -->
-                <div>
-                    <div class="flex justify-between items-center" style="margin-bottom: 8px;">
-                        <span class="text-xs text-secondary" style="font-weight: 600; text-transform: uppercase;">Atributos de la Clase</span>
-                        <span class="text-xs text-secondary" id="inspector-attr-count">0 atributos</span>
-                    </div>
-
-                    <!-- Lista dinámica de atributos -->
-                    <div id="inspector-attr-list" class="flex flex-col gap-2" style="max-height: 180px; overflow-y: auto; margin-bottom: 12px; padding-right: 4px;">
-                        <!-- Se inyectan dinámicamente -->
-                    </div>
-
-                    <!-- Formulario para agregar nuevo atributo -->
-                    <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; border: 1px dashed var(--border-color);">
-                        <span class="text-xs text-secondary" style="display: block; margin-bottom: 8px; font-weight: 600;">+ Agregar Nuevo Atributo</span>
-                        <div class="flex gap-2 items-center">
-                            <select id="new-attr-vis" style="width: 75px; padding: 6px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; font-size: 12px;">
-                                <option value="private">- Private</option>
-                                <option value="public">+ Public</option>
-                                <option value="protected"># Protected</option>
-                                <option value="package">~ Package</option>
+                <form autocomplete="off" onsubmit="return false;">
+                    <!-- Datos Principales de la Clase -->
+                    <div class="grid-2" style="gap: 12px; margin-bottom: 16px;">
+                        <div class="flex flex-col gap-1">
+                            <label class="text-xs text-secondary">Nombre de la Clase</label>
+                            <input type="text" id="inspector-class-name" name="uml_class_title" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Ej. Cliente">
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <label class="text-xs text-secondary">Estereotipo / Tipo</label>
+                            <select id="inspector-class-stereotype" style="background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); padding: 8px; border-radius: 6px;">
+                                <option value="CLASS">Class (Clase Estándar)</option>
+                                <option value="INTERFACE">&lt;&lt;interface&gt;&gt;</option>
+                                <option value="ENUM">&lt;&lt;enumeration&gt;&gt;</option>
+                                <option value="DATATYPE">&lt;&lt;dataType&gt;&gt;</option>
+                                <option value="PACKAGE">&lt;&lt;package&gt;&gt;</option>
                             </select>
-                            <input type="text" id="new-attr-name" placeholder="nombreAtributo" style="flex: 1; padding: 6px; font-size: 12px;">
-                            <select id="new-attr-type" style="width: 110px; padding: 6px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; font-size: 12px;">
-                                <option value="String">String</option>
-                                <option value="Long">Long</option>
-                                <option value="Integer">Integer</option>
-                                <option value="Double">Double</option>
-                                <option value="Boolean">Boolean</option>
-                                <option value="LocalDate">LocalDate</option>
-                                <option value="BigDecimal">BigDecimal</option>
-                                <option value="List">List&lt;&gt;</option>
-                            </select>
-                            <label class="flex items-center gap-1 text-xs" style="cursor: pointer;" title="Clave Primaria">
-                                <input type="checkbox" id="new-attr-pk" style="width: auto;"> PK
-                            </label>
-                            <button class="btn btn-primary" id="btn-add-attr-confirm" style="padding: 6px 12px; font-size: 12px;">
-                                Agregar
-                            </button>
                         </div>
                     </div>
-                </div>
+
+                    <!-- Sección de Atributos -->
+                    <div style="margin-bottom: 16px;">
+                        <div class="flex justify-between items-center" style="margin-bottom: 8px;">
+                            <span class="text-xs text-secondary" style="font-weight: 600; text-transform: uppercase;">Atributos de la Clase</span>
+                            <span class="text-xs text-secondary" id="inspector-attr-count">0 atributos</span>
+                        </div>
+
+                        <!-- Lista dinámica de atributos -->
+                        <div id="inspector-attr-list" class="flex flex-col gap-2" style="max-height: 140px; overflow-y: auto; margin-bottom: 10px; padding-right: 4px;">
+                            <!-- Se inyectan dinámicamente -->
+                        </div>
+
+                        <!-- Formulario para agregar nuevo atributo -->
+                        <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; border: 1px dashed var(--border-color);">
+                            <span class="text-xs text-secondary" style="display: block; margin-bottom: 8px; font-weight: 600;">+ Agregar Nuevo Atributo</span>
+                            <div class="flex gap-2 items-center">
+                                <select id="new-attr-vis" style="width: 75px; padding: 6px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; font-size: 12px;">
+                                    <option value="private">- Private</option>
+                                    <option value="public">+ Public</option>
+                                    <option value="protected"># Protected</option>
+                                    <option value="package">~ Package</option>
+                                </select>
+                                <input type="text" id="new-attr-name" name="uml_new_attr_name" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="nombreAtributo" style="flex: 1; padding: 6px; font-size: 12px;">
+                                <select id="new-attr-type" style="width: 110px; padding: 6px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; font-size: 12px;">
+                                    <option value="String">String</option>
+                                    <option value="Long">Long</option>
+                                    <option value="Integer">Integer</option>
+                                    <option value="Double">Double</option>
+                                    <option value="Boolean">Boolean</option>
+                                    <option value="LocalDate">LocalDate</option>
+                                    <option value="BigDecimal">BigDecimal</option>
+                                    <option value="List">List&lt;&gt;</option>
+                                </select>
+                                <label class="flex items-center gap-1 text-xs" style="cursor: pointer;" title="Clave Primaria">
+                                    <input type="checkbox" id="new-attr-pk" style="width: auto;"> PK
+                                </label>
+                                <button type="button" class="btn btn-primary" id="btn-add-attr-confirm" style="padding: 6px 12px; font-size: 12px;">
+                                    Agregar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sección de Métodos / Operaciones -->
+                    <div>
+                        <div class="flex justify-between items-center" style="margin-bottom: 8px;">
+                            <span class="text-xs text-secondary" style="font-weight: 600; text-transform: uppercase;">Métodos de la Clase</span>
+                            <span class="text-xs text-secondary" id="inspector-method-count">0 métodos</span>
+                        </div>
+
+                        <!-- Lista dinámica de métodos -->
+                        <div id="inspector-method-list" class="flex flex-col gap-2" style="max-height: 140px; overflow-y: auto; margin-bottom: 10px; padding-right: 4px;">
+                            <!-- Se inyectan dinámicamente -->
+                        </div>
+
+                        <!-- Formulario para agregar nuevo método -->
+                        <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; border: 1px dashed var(--border-color);">
+                            <span class="text-xs text-secondary" style="display: block; margin-bottom: 8px; font-weight: 600;">+ Agregar Nuevo Método</span>
+                            <div class="flex gap-2 items-center">
+                                <select id="new-method-vis" style="width: 75px; padding: 6px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; font-size: 12px;">
+                                    <option value="public">+ Public</option>
+                                    <option value="private">- Private</option>
+                                    <option value="protected"># Protected</option>
+                                    <option value="package">~ Package</option>
+                                </select>
+                                <input type="text" id="new-method-name" name="uml_new_method_name" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="ej. crear, calcularTotal" style="flex: 1; padding: 6px; font-size: 12px;">
+                                <select id="new-method-type" style="width: 100px; padding: 6px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; font-size: 12px;">
+                                    <option value="void">void</option>
+                                    <option value="String">String</option>
+                                    <option value="Long">Long</option>
+                                    <option value="Integer">Integer</option>
+                                    <option value="Double">Double</option>
+                                    <option value="Boolean">Boolean</option>
+                                    <option value="List">List&lt;&gt;</option>
+                                </select>
+                                <button type="button" class="btn btn-primary" id="btn-add-method-confirm" style="padding: 6px 12px; font-size: 12px;">
+                                    Agregar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
 
                 <!-- Footer de Acciones -->
-                <div class="flex justify-between items-center" style="border-top: 1px solid var(--border-color); padding-top: 16px;">
-                    <button class="btn btn-ghost" id="btn-inspector-delete-class" style="color: var(--status-danger); font-size: 13px;">
+                <div class="flex justify-between items-center" style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-top: 12px;">
+                    <button type="button" class="btn btn-ghost" id="btn-inspector-delete-class" style="color: var(--status-danger); font-size: 13px;">
                         <span class="material-icons" style="font-size: 16px;">delete</span> Eliminar Clase
                     </button>
                     <div class="flex gap-2">
-                        <button class="btn btn-secondary" id="btn-inspector-cancel">Cancelar</button>
-                        <button class="btn btn-primary" id="btn-inspector-save">Guardar Cambios</button>
+                        <button type="button" class="btn btn-secondary" id="btn-inspector-cancel">Cancelar</button>
+                        <button type="button" class="btn btn-primary" id="btn-inspector-save">Guardar Cambios</button>
                     </div>
                 </div>
             </div>
@@ -520,36 +568,41 @@
 
         <!-- Add Class Modal (Diálogo de Creación Rápida) -->
         <div id="modal-add-class" class="hidden" style="position: absolute; top: 120px; left: 260px; z-index: 30; background: var(--bg-card); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color); width: 280px; box-shadow: var(--shadow-lg);">
-            <h3 style="margin-top:0; font-size: 14px; margin-bottom: 12px;" id="modal-add-class-title">Nueva Clase UML</h3>
-            <input type="text" id="input-class-name" placeholder="Nombre (Ej. Producto)" class="w-full" style="margin-bottom: 12px; padding: 6px; font-size: 13px;">
-            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">Atributo Inicial (Opcional):</div>
-            <div class="flex gap-2" style="margin-bottom: 12px;">
-                <input type="text" id="input-attr-name" placeholder="id" style="width: 50%; padding: 6px; font-size: 12px;">
-                <input type="text" id="input-attr-type" placeholder="Long" style="width: 50%; padding: 6px; font-size: 12px;">
-            </div>
-            <div class="flex gap-2 justify-end">
-                <button class="btn btn-ghost" id="btn-cancel-class" style="padding: 4px 8px; font-size: 12px;">Cancelar</button>
-                <button class="btn btn-primary" id="btn-confirm-class" style="padding: 4px 8px; font-size: 12px;">Crear</button>
-            </div>
+            <form autocomplete="off" onsubmit="return false;">
+                <h3 style="margin-top:0; font-size: 14px; margin-bottom: 12px;" id="modal-add-class-title">Nueva Clase UML</h3>
+                <input type="text" id="input-class-name" name="uml_quick_class_name" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Nombre (Ej. Producto)" class="w-full" style="margin-bottom: 12px; padding: 6px; font-size: 13px;">
+                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">Atributo Inicial (Opcional):</div>
+                <div class="flex gap-2" style="margin-bottom: 12px;">
+                    <input type="text" id="input-attr-name" name="uml_quick_attr_name" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="id" style="width: 50%; padding: 6px; font-size: 12px;">
+                    <input type="text" id="input-attr-type" name="uml_quick_attr_type" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Long" style="width: 50%; padding: 6px; font-size: 12px;">
+                </div>
+                <div class="flex gap-2 justify-end">
+                    <button type="button" class="btn btn-ghost" id="btn-cancel-class" style="padding: 4px 8px; font-size: 12px;">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="btn-confirm-class" style="padding: 4px 8px; font-size: 12px;">Crear</button>
+                </div>
+            </form>
         </div>
 
         <!-- Add Relation Modal -->
         <div id="modal-add-relation" class="hidden" style="position: absolute; top: 150px; left: 160px; z-index: 30; background: var(--bg-card); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color); width: 260px; box-shadow: var(--shadow-lg);">
-            <h3 style="margin-top:0; font-size: 14px; margin-bottom: 12px;">Nueva Relación UML</h3>
-            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">Tipo de Relación:</div>
-            <select id="select-relation-type" style="width: 100%; margin-bottom: 12px; padding: 6px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
-                <option value="ASOCIACION">Asociación (Association)</option>
-                <option value="ASOCIACION_DIRIGIDA">Asociación Dirigida (Direct)</option>
-                <option value="AGREGACION">Agregación (Aggregation)</option>
-                <option value="COMPOSICION">Composición (Composition)</option>
-                <option value="GENERALIZACION">Generalización (Inheritance)</option>
-                <option value="REALIZACION">Realización (Realization)</option>
-                <option value="DEPENDENCIA">Dependencia (Dependency)</option>
-            </select>
-            <div class="flex gap-2 justify-end">
-                <button class="btn btn-ghost" id="btn-cancel-relation" style="padding: 4px 8px; font-size: 12px;">Cancelar</button>
-                <button class="btn btn-primary" id="btn-confirm-relation" style="padding: 4px 8px; font-size: 12px;">Conectar</button>
-            </div>
+            <form autocomplete="off" onsubmit="return false;">
+                <h3 style="margin-top:0; font-size: 14px; margin-bottom: 12px;">Nueva Relación UML</h3>
+                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">Tipo de Relación:</div>
+                <select id="select-relation-type" style="width: 100%; margin-bottom: 12px; padding: 6px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
+                    <option value="ASOCIACION">Asociación (Association)</option>
+                    <option value="ASOCIACION_DIRIGIDA">Asociación Dirigida (Direct)</option>
+                    <option value="AGREGACION">Agregación (Aggregation)</option>
+                    <option value="COMPOSICION">Composición (Composition)</option>
+                    <option value="GENERALIZACION">Generalización (Inheritance)</option>
+                    <option value="REALIZACION">Realización (Realization)</option>
+                    <option value="DEPENDENCIA">Dependencia (Dependency)</option>
+                    <option value="CLASE_ASOCIACION">Clase de Asociación (Association Class)</option>
+                </select>
+                <div class="flex gap-2 justify-end">
+                    <button type="button" class="btn btn-ghost" id="btn-cancel-relation" style="padding: 4px 8px; font-size: 12px;">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="btn-confirm-relation" style="padding: 4px 8px; font-size: 12px;">Conectar</button>
+                </div>
+            </form>
         </div>
 
         <!-- Original Canvas for dynamic rendering -->

@@ -64,6 +64,14 @@ const newAttrType = document.getElementById('new-attr-type');
 const newAttrPk = document.getElementById('new-attr-pk');
 const btnAddAttrConfirm = document.getElementById('btn-add-attr-confirm');
 
+// UI Modal Inspector Métodos
+const inspectorMethodList = document.getElementById('inspector-method-list');
+const inspectorMethodCount = document.getElementById('inspector-method-count');
+const newMethodVis = document.getElementById('new-method-vis');
+const newMethodName = document.getElementById('new-method-name');
+const newMethodType = document.getElementById('new-method-type');
+const btnAddMethodConfirm = document.getElementById('btn-add-method-confirm');
+
 // UI Modal Add Class
 const modalAddClass = document.getElementById('modal-add-class');
 const modalAddClassTitle = document.getElementById('modal-add-class-title');
@@ -152,11 +160,14 @@ function getClassDimensions(c) {
     const width = 190;
     const attrs = (c.atributos && c.atributos.length > 0) ? c.atributos : [];
     const attrCount = attrs.length > 0 ? attrs.length : 1;
+    const methods = (c.metodos && c.metodos.length > 0) ? c.metodos : [];
+    const methodCount = methods.length;
     const hasStereotype = c.estereotipo && c.estereotipo !== 'CLASS';
     const headerHeight = hasStereotype ? 42 : 34;
-    const attrHeight = Math.max(36, attrCount * 20 + 12);
-    const height = headerHeight + attrHeight;
-    return { width, height, headerHeight, attrHeight, hasStereotype };
+    const attrHeight = Math.max(34, attrCount * 20 + 8);
+    const methodHeight = methodCount > 0 ? (methodCount * 18 + 8) : 0;
+    const height = headerHeight + attrHeight + methodHeight;
+    return { width, height, headerHeight, attrHeight, methodHeight, hasStereotype, methods };
 }
 
 function findClassAt(x, y) {
@@ -210,10 +221,29 @@ function findRelationAt(x, y) {
         if (origen && destino) {
             const dimOrig = getClassDimensions(origen);
             const dimDest = getClassDimensions(destino);
-            const x1 = origen.posX + dimOrig.width / 2;
-            const y1 = origen.posY + dimOrig.height / 2;
-            const x2 = destino.posX + dimDest.width / 2;
-            const y2 = destino.posY + dimDest.height / 2;
+            let x1 = origen.posX + dimOrig.width / 2;
+            let y1 = origen.posY + dimOrig.height / 2;
+            let x2 = destino.posX + dimDest.width / 2;
+            let y2 = destino.posY + dimDest.height / 2;
+
+            if (r.tipoRelacion === 'CLASE_ASOCIACION') {
+                let baseRel = diagramData.relaciones.find(rb => 
+                    rb.tipoRelacion !== 'CLASE_ASOCIACION' && 
+                    (String(getRelOrigId(rb)) === String(destino.id) || String(getRelDestId(rb)) === String(destino.id))
+                );
+                if (baseRel) {
+                    const cA = diagramData.clases.find(c => String(c.id) === getRelOrigId(baseRel));
+                    const cB = diagramData.clases.find(c => String(c.id) === getRelDestId(baseRel));
+                    if (cA && cB) {
+                        const dimA = getClassDimensions(cA);
+                        const dimB = getClassDimensions(cB);
+                        x2 = ((cA.posX + dimA.width / 2) + (cB.posX + dimB.width / 2)) / 2;
+                        y2 = ((cA.posY + dimA.height / 2) + (cB.posY + dimB.height / 2)) / 2;
+                    }
+                }
+                y1 = (y2 < origen.posY) ? origen.posY : (origen.posY + dimOrig.height);
+            }
+
             const dist = pointToSegmentDistance(x, y, x1, y1, x2, y2);
             if (dist <= tolerance) {
                 return { 
@@ -233,6 +263,8 @@ function findRelationAt(x, y) {
 // TOOLBOX ENTERPRISE ARCHITECT INTERACTION
 // ==============================================
 function initToolbox() {
+    if (window.__toolboxInitialized) return;
+    window.__toolboxInitialized = true;
     document.querySelectorAll('.ea-section-header').forEach(header => {
         header.addEventListener('click', () => {
             const items = header.nextElementSibling;
@@ -463,11 +495,77 @@ function openClassInspector(clase) {
     inspectorClassName.value = clase.nombre || '';
     inspectorStereotype.value = clase.estereotipo || 'CLASS';
     renderInspectorAttributes(clase);
+    renderInspectorMethods(clase);
     modalInspector.classList.remove('hidden');
 }
 
 function closeClassInspector() {
     modalInspector.classList.add('hidden');
+}
+
+function renderInspectorMethods(clase) {
+    if (!inspectorMethodList) return;
+    inspectorMethodList.innerHTML = '';
+    const methods = clase.metodos || [];
+    if (inspectorMethodCount) inspectorMethodCount.textContent = `${methods.length} métodos`;
+
+    if (methods.length === 0) {
+        inspectorMethodList.innerHTML = '<div style="color: var(--text-secondary); font-size: 12px; padding: 8px;">No hay métodos definidos. Agrega uno abajo.</div>';
+        return;
+    }
+
+    methods.forEach(method => {
+        const row = document.createElement('div');
+        row.className = 'inspector-attr-row';
+        row.setAttribute('data-method-id', method.id);
+        row.style.gridTemplateColumns = '85px 1fr 90px 40px';
+        const visSymbol = method.visibilidad === 'private' ? '- private' : (method.visibilidad === 'protected' ? '# protected' : (method.visibilidad === 'package' ? '~ package' : '+ public'));
+        
+        row.innerHTML = `
+            <span style="color: #60A5FA; font-weight: 500;">${visSymbol}</span>
+            <span style="font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis;">${method.nombre}()</span>
+            <span style="color: #34D399; font-size: 11px;">${method.tipoRetorno || method.tipo || 'void'}</span>
+            <div class="flex gap-1 justify-end">
+                <button type="button" class="btn btn-ghost btn-del-method" style="padding: 2px 4px; color: var(--status-danger);" title="Eliminar Método">
+                    <span class="material-icons" style="font-size: 16px;">delete</span>
+                </button>
+            </div>
+        `;
+
+        const btnDel = row.querySelector('.btn-del-method');
+        btnDel.addEventListener('click', () => {
+            eliminarMetodo(clase, method);
+        });
+
+        inspectorMethodList.appendChild(row);
+    });
+}
+
+function agregarMetodo(clase, vis, nombre, tipoRetorno) {
+    if (!nombre.trim()) return;
+    let cleanName = nombre.trim();
+    if (cleanName.endsWith('()')) {
+        cleanName = cleanName.slice(0, -2);
+    }
+    const nuevoMetodo = {
+        id: 'temp-met-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+        nombre: cleanName,
+        tipoRetorno: tipoRetorno || 'void',
+        visibilidad: vis || 'public',
+        orden: (clase.metodos ? clase.metodos.length : 0)
+    };
+
+    if (!clase.metodos) clase.metodos = [];
+    clase.metodos.push(nuevoMetodo);
+
+    renderInspectorMethods(clase);
+    render();
+}
+
+function eliminarMetodo(clase, method) {
+    clase.metodos = (clase.metodos || []).filter(m => m !== method && m.id !== method.id);
+    renderInspectorMethods(clase);
+    render();
 }
 
 function renderInspectorAttributes(clase) {
@@ -746,6 +844,15 @@ if (btnInspectorSave) {
             if (newAttrPk) newAttrPk.checked = false;
         }
 
+        // 2b. Si hay texto escrito en "+ Agregar Nuevo Método", agregarlo automáticamente
+        if (newMethodName && newMethodName.value.trim()) {
+            const mNombre = newMethodName.value.trim();
+            const mTipo = newMethodType ? newMethodType.value.trim() : 'void';
+            const mVis = newMethodVis ? newMethodVis.value : 'public';
+            agregarMetodo(selectedClase, mVis, mNombre, mTipo);
+            newMethodName.value = '';
+        }
+
         // 3. Guardar Nombre y Estereotipo de la Clase
         selectedClase.nombre = inspectorClassName.value.trim() || selectedClase.nombre;
         selectedClase.estereotipo = inspectorStereotype.value;
@@ -794,9 +901,31 @@ if (btnAddAttrConfirm) {
     });
 }
 
+if (btnAddMethodConfirm) {
+    btnAddMethodConfirm.addEventListener('click', () => {
+        if (!selectedClase) return;
+        const nombre = newMethodName.value;
+        const tipo = newMethodType.value;
+        const vis = newMethodVis.value;
+
+        if (!nombre.trim()) {
+            alert('Ingresa el nombre del método');
+            return;
+        }
+
+        agregarMetodo(selectedClase, vis, nombre, tipo);
+        newMethodName.value = '';
+        newMethodName.focus();
+    });
+}
+
 // Diálogo Crear Clase Rápida
-if (btnCancelClass) btnCancelClass.addEventListener('click', () => modalAddClass.classList.add('hidden'));
-if (btnConfirmClass) {
+if (btnCancelClass && !btnCancelClass.hasAttribute('data-bound')) {
+    btnCancelClass.setAttribute('data-bound', 'true');
+    btnCancelClass.addEventListener('click', () => modalAddClass.classList.add('hidden'));
+}
+if (btnConfirmClass && !btnConfirmClass.hasAttribute('data-bound')) {
+    btnConfirmClass.setAttribute('data-bound', 'true');
     btnConfirmClass.addEventListener('click', () => {
         const nombre = inputClassName.value.trim();
         const attrName = inputAttrName.value.trim();
@@ -871,6 +1000,82 @@ function mostrarNotificacion(mensaje) {
 function crearRelacionDirecta(origen, destino, tipo) {
     if (!origen || !destino) return;
     
+    if (tipo === 'CLASE_ASOCIACION') {
+        // 1. Crear o verificar la relación base entre origen y destino si no existe
+        const relBaseExistente = diagramData.relaciones.find(r => 
+            (String(getRelOrigId(r)) === String(origen.id) && String(getRelDestId(r)) === String(destino.id)) ||
+            (String(getRelOrigId(r)) === String(destino.id) && String(getRelDestId(r)) === String(origen.id))
+        );
+
+        if (!relBaseExistente) {
+            const tempRelId = 'temp-rel-' + Date.now() + '-base';
+            const nuevaRelBase = {
+                id: tempRelId,
+                tempId: tempRelId,
+                claseOrigen: { id: origen.id },
+                claseDestino: { id: destino.id },
+                origenId: origen.id,
+                destinoId: destino.id,
+                tipoRelacion: 'ASOCIACION',
+                cardinalidadOrigen: '0..*',
+                cardinalidadDestino: '1..*'
+            };
+            diagramData.relaciones.push(nuevaRelBase);
+            if (stompClient && stompClient.connected && !String(origen.id).startsWith('temp-') && !String(destino.id).startsWith('temp-')) {
+                stompClient.publish({
+                    destination: `/app/sala/${currentSessionToken}/relacion/agregar`,
+                    body: JSON.stringify({
+                        tempId: tempRelId,
+                        origenId: origen.id,
+                        destinoId: destino.id,
+                        tipo: 'ASOCIACION'
+                    })
+                });
+            }
+        }
+
+        // 2. Crear automáticamente la clase intermedia (Tabla de Asociación)
+        const intermediateName = `Detalle_${origen.nombre}`;
+        const midX = Math.round((origen.posX + destino.posX) / 2);
+        const midY = Math.round((origen.posY + destino.posY) / 2) + 90;
+        const intermediateClass = window.CaseCollab.crearClaseConAtributos(intermediateName, [], 'CLASS', midX, midY);
+
+        // 3. Crear el enlace punteado de Clase de Asociación hacia la relación / destino
+        if (intermediateClass) {
+            const tempRelAssocId = 'temp-rel-' + (Date.now() + 50) + '-assoc';
+            const nuevaRelAssoc = {
+                id: tempRelAssocId,
+                tempId: tempRelAssocId,
+                claseOrigen: { id: intermediateClass.id },
+                claseDestino: { id: destino.id },
+                origenId: intermediateClass.id,
+                destinoId: destino.id,
+                tipoRelacion: 'CLASE_ASOCIACION',
+                cardinalidadOrigen: '',
+                cardinalidadDestino: ''
+            };
+            diagramData.relaciones.push(nuevaRelAssoc);
+            if (stompClient && stompClient.connected && !String(intermediateClass.id).startsWith('temp-') && !String(destino.id).startsWith('temp-')) {
+                stompClient.publish({
+                    destination: `/app/sala/${currentSessionToken}/relacion/agregar`,
+                    body: JSON.stringify({
+                        tempId: tempRelAssocId,
+                        origenId: intermediateClass.id,
+                        destinoId: destino.id,
+                        tipo: 'CLASE_ASOCIACION'
+                    })
+                });
+            }
+        }
+
+        relationSourceClass = null;
+        pendingRelationTarget = null;
+        canvasMode = MODE_POINTER;
+        clearActiveToolItems();
+        render();
+        return;
+    }
+
     const tempRelId = 'temp-rel-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
     const nuevaRel = {
         id: tempRelId,
@@ -1038,7 +1243,6 @@ window.CaseCollab = {
         updateQuickActionsPosition();
         render();
 
-        window.CaseCollab.guardarAvance(false);
         return nuevaClase;
     },
 
@@ -1227,6 +1431,13 @@ window.CaseCollab = {
                         tipoDato: a.tipoDato || a.tipo || 'String',
                         visibilidad: a.visibilidad || 'private',
                         esPk: !!a.esPk
+                    })),
+                    metodos: (c.metodos || []).map(m => ({
+                        id: (String(m.id).startsWith('temp-') ? null : m.id),
+                        nombre: m.nombre,
+                        tipoRetorno: m.tipoRetorno || m.tipo || 'void',
+                        visibilidad: m.visibilidad || 'public',
+                        orden: m.orden || 0
                     }))
                 })),
                 relaciones: diagramData.relaciones.map(r => ({
@@ -2027,6 +2238,29 @@ function render() {
             ctx.fillText("(sin atributos)", c.posX + 12, attrY);
         }
 
+        // Línea divisoria atributos / operaciones (solo si hay métodos)
+        if (dim.methods && dim.methods.length > 0) {
+            const methodSepY = c.posY + dim.headerHeight + dim.attrHeight;
+            ctx.strokeStyle = colorBordeNormal;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(c.posX, methodSepY);
+            ctx.lineTo(c.posX + dim.width, methodSepY);
+            ctx.stroke();
+
+            // Métodos / Operaciones
+            let methodY = methodSepY + 14;
+            ctx.fillStyle = "#94A3B8";
+            ctx.font = "11px Inter, sans-serif";
+            ctx.textAlign = "left";
+            dim.methods.forEach(m => {
+                const vis = m.visibilidad === 'private' ? '-' : (m.visibilidad === 'protected' ? '#' : (m.visibilidad === 'package' ? '~' : '+'));
+                const mName = (typeof m === 'string') ? m : `${vis} ${m.nombre}(): ${m.tipoRetorno || m.tipo || 'void'}`;
+                ctx.fillText(mName, c.posX + 12, methodY);
+                methodY += 18;
+            });
+        }
+
         // Indicador de Bloqueo remoto
         if (isLocked) {
             ctx.fillStyle = colorBordeBloqueado;
@@ -2062,6 +2296,53 @@ function dibujarLineaRelacion(origen, destino, tipo, nombre, cardOrig, cardDest,
     const dimOrig = getClassDimensions(origen);
     const dimDest = getClassDimensions(destino);
 
+    // Si es CLASE_ASOCIACION, nace desde el punto medio de la línea continua base
+    if (tipo === "CLASE_ASOCIACION") {
+        let baseRel = diagramData.relaciones.find(r => 
+            r.tipoRelacion !== 'CLASE_ASOCIACION' && 
+            (String(getRelOrigId(r)) === String(destino.id) || String(getRelDestId(r)) === String(destino.id))
+        );
+
+        let targetX = destino.posX + dimDest.width / 2;
+        let targetY = destino.posY + dimDest.height / 2;
+
+        if (baseRel) {
+            const bOrigId = getRelOrigId(baseRel);
+            const bDestId = getRelDestId(baseRel);
+            const cA = diagramData.clases.find(c => String(c.id) === bOrigId);
+            const cB = diagramData.clases.find(c => String(c.id) === bDestId);
+            if (cA && cB) {
+                const dimA = getClassDimensions(cA);
+                const dimB = getClassDimensions(cB);
+                targetX = ((cA.posX + dimA.width / 2) + (cB.posX + dimB.width / 2)) / 2;
+                targetY = ((cA.posY + dimA.height / 2) + (cB.posY + dimB.height / 2)) / 2;
+            }
+        }
+
+        const assocAnchorX = origen.posX + dimOrig.width / 2;
+        const assocAnchorY = (targetY < origen.posY) ? origen.posY : (origen.posY + dimOrig.height);
+
+        ctx.strokeStyle = isSelected ? colorRelacionSeleccionada : "#94A3B8";
+        ctx.lineWidth = isSelected ? 2.5 : 1.6;
+        ctx.setLineDash([6, 4]);
+
+        ctx.beginPath();
+        ctx.moveTo(targetX, targetY);
+        ctx.lineTo(assocAnchorX, assocAnchorY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        if (isSelected) {
+            const midX = (targetX + assocAnchorX) / 2;
+            const midY = (targetY + assocAnchorY) / 2;
+            ctx.fillStyle = colorRelacionSeleccionada;
+            ctx.beginPath();
+            ctx.arc(midX, midY, 5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        return;
+    }
+
     const x1 = origen.posX + dimOrig.width / 2;
     const y1 = origen.posY + dimOrig.height / 2;
     const x2 = destino.posX + dimDest.width / 2;
@@ -2093,23 +2374,25 @@ function dibujarLineaRelacion(origen, destino, tipo, nombre, cardOrig, cardDest,
         ctx.fillText(nombre, midX, midY - 6);
     }
 
-    // Renderizar Cardinalidades
+    // Renderizar Cardinalidades (Visible para todos los valores no vacíos)
     const angle = Math.atan2(y2 - y1, x2 - x1);
-    ctx.font = "11px Inter, sans-serif";
-    ctx.fillStyle = "#94A3B8";
+    ctx.font = "bold 11px Inter, sans-serif";
+    ctx.fillStyle = isSelected ? "#38BDF8" : "#E2E8F0";
 
-    if (cardOrig && cardOrig !== "1") {
-        const offsetOrigX = x1 + Math.cos(angle) * 70 - Math.sin(angle) * 12;
-        const offsetOrigY = y1 + Math.sin(angle) * 70 + Math.cos(angle) * 12;
+    if (cardOrig && cardOrig.trim()) {
+        const offsetOrigX = x1 + Math.cos(angle) * (dimOrig.width / 2 + 15) - Math.sin(angle) * 12;
+        const offsetOrigY = y1 + Math.sin(angle) * (dimOrig.height / 2 + 15) + Math.cos(angle) * 12;
         ctx.textAlign = "center";
-        ctx.fillText(cardOrig, offsetOrigX, offsetOrigY);
+        ctx.textBaseline = "middle";
+        ctx.fillText(cardOrig.trim(), offsetOrigX, offsetOrigY);
     }
 
-    if (cardDest && cardDest !== "1") {
-        const offsetDestX = x2 - Math.cos(angle) * 70 - Math.sin(angle) * 12;
-        const offsetDestY = y2 - Math.sin(angle) * 70 + Math.cos(angle) * 12;
+    if (cardDest && cardDest.trim()) {
+        const offsetDestX = x2 - Math.cos(angle) * (dimDest.width / 2 + 15) - Math.sin(angle) * 12;
+        const offsetDestY = y2 - Math.sin(angle) * (dimDest.height / 2 + 15) + Math.cos(angle) * 12;
         ctx.textAlign = "center";
-        ctx.fillText(cardDest, offsetDestX, offsetDestY);
+        ctx.textBaseline = "middle";
+        ctx.fillText(cardDest.trim(), offsetDestX, offsetDestY);
     }
 
     // Dibujar Puntero / Manejador si está seleccionada
@@ -2118,6 +2401,11 @@ function dibujarLineaRelacion(origen, destino, tipo, nombre, cardOrig, cardDest,
         ctx.beginPath();
         ctx.arc(midX, midY, 5, 0, Math.PI * 2);
         ctx.fill();
+    }
+
+    // Para Asociación Simple no se dibuja flecha terminal
+    if (tipo === "ASOCIACION") {
+        return;
     }
 
     // Dibujar Punta / Terminación UML 2.5

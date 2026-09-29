@@ -28,6 +28,7 @@ services:
       - SPRING_DATASOURCE_PASSWORD=devpassword
       - JWT_SECRET=VerySecretAndLongKeyForProductionEnvironment2026
       - JWT_EXPIRATION=86400000
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     depends_on:
       - postgres-db
     restart: always

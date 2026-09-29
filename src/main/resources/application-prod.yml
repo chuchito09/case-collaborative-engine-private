@@ -23,6 +23,9 @@ application:
       secret-key: ${JWT_SECRET}
       expiration: ${JWT_EXPIRATION:86400000}
 
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+
 server:
   port: 8080
   forward-headers-strategy: native

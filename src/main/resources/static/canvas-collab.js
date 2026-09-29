@@ -210,6 +210,87 @@ function getRelDestId(r) {
     return null;
 }
 
+function findBestBaseRelationForAssociation(origen, destino, relNombre) {
+    if (!diagramData || !diagramData.relaciones || diagramData.relaciones.length === 0) return null;
+
+    // 1. Coincidencia explícita si relNombre define las clases base (ej. "Venta:Producto" o "Venta-Producto")
+    if (relNombre && (relNombre.includes(':') || relNombre.includes('-'))) {
+        const sep = relNombre.includes(':') ? ':' : '-';
+        const parts = relNombre.split(sep).map(s => s.trim().toLowerCase());
+        if (parts.length === 2 && parts[0] && parts[1]) {
+            const exactMatch = diagramData.relaciones.find(rb => {
+                if (rb.tipoRelacion === 'CLASE_ASOCIACION') return false;
+                const cA = diagramData.clases.find(c => String(c.id) === getRelOrigId(rb));
+                const cB = diagramData.clases.find(c => String(c.id) === getRelDestId(rb));
+                if (!cA || !cB) return false;
+                const nA = (cA.nombre || '').trim().toLowerCase();
+                const nB = (cB.nombre || '').trim().toLowerCase();
+                return (nA === parts[0] && nB === parts[1]) || (nA === parts[1] && nB === parts[0]);
+            });
+            if (exactMatch) return exactMatch;
+        }
+    }
+
+    // 2. Relaciones candidatas continuas conectadas a destino (o en general)
+    let candidateRels = diagramData.relaciones.filter(rb => 
+        rb.tipoRelacion !== 'CLASE_ASOCIACION' &&
+        destino && (String(getRelOrigId(rb)) === String(destino.id) || String(getRelDestId(rb)) === String(destino.id))
+    );
+
+    if (candidateRels.length === 0) {
+        candidateRels = diagramData.relaciones.filter(rb => rb.tipoRelacion !== 'CLASE_ASOCIACION');
+    }
+
+    if (candidateRels.length === 0) return null;
+    if (candidateRels.length === 1) return candidateRels[0];
+
+    // 3. Resolución Geométrica por Distancia Euclidiana Mínima al centro de la clase origen
+    const dimOrig = getClassDimensions(origen);
+    const origCenterX = origen.posX + dimOrig.width / 2;
+    const origCenterY = origen.posY + dimOrig.height / 2;
+
+    let bestRel = null;
+    let minDistance = Infinity;
+
+    for (const rb of candidateRels) {
+        const cA = diagramData.clases.find(c => String(c.id) === getRelOrigId(rb));
+        const cB = diagramData.clases.find(c => String(c.id) === getRelDestId(rb));
+        if (!cA || !cB) continue;
+        const dimA = getClassDimensions(cA);
+        const dimB = getClassDimensions(cB);
+        const midX = ((cA.posX + dimA.width / 2) + (cB.posX + dimB.width / 2)) / 2;
+        const midY = ((cA.posY + dimA.height / 2) + (cB.posY + dimB.height / 2)) / 2;
+
+        const dist = Math.hypot(origCenterX - midX, origCenterY - midY);
+        if (dist < minDistance) {
+            minDistance = dist;
+            bestRel = rb;
+        }
+    }
+
+    return bestRel || candidateRels[0];
+}
+
+function getBoxAnchorPoint(clase, targetX, targetY) {
+    const dim = getClassDimensions(clase);
+    const cx = clase.posX + dim.width / 2;
+    const cy = clase.posY + dim.height / 2;
+    const dx = targetX - cx;
+    const dy = targetY - cy;
+
+    if (Math.abs(dy) * dim.width > Math.abs(dx) * dim.height) {
+        return {
+            x: cx,
+            y: dy > 0 ? (clase.posY + dim.height) : clase.posY
+        };
+    } else {
+        return {
+            x: dx > 0 ? (clase.posX + dim.width) : clase.posX,
+            y: cy
+        };
+    }
+}
+
 function findRelationAt(x, y) {
     const tolerance = 12;
     for (let i = diagramData.relaciones.length - 1; i >= 0; i--) {
@@ -227,10 +308,7 @@ function findRelationAt(x, y) {
             let y2 = destino.posY + dimDest.height / 2;
 
             if (r.tipoRelacion === 'CLASE_ASOCIACION') {
-                let baseRel = diagramData.relaciones.find(rb => 
-                    rb.tipoRelacion !== 'CLASE_ASOCIACION' && 
-                    (String(getRelOrigId(rb)) === String(destino.id) || String(getRelDestId(rb)) === String(destino.id))
-                );
+                const baseRel = findBestBaseRelationForAssociation(origen, destino, r.nombre);
                 if (baseRel) {
                     const cA = diagramData.clases.find(c => String(c.id) === getRelOrigId(baseRel));
                     const cB = diagramData.clases.find(c => String(c.id) === getRelDestId(baseRel));
@@ -241,7 +319,9 @@ function findRelationAt(x, y) {
                         y2 = ((cA.posY + dimA.height / 2) + (cB.posY + dimB.height / 2)) / 2;
                     }
                 }
-                y1 = (y2 < origen.posY) ? origen.posY : (origen.posY + dimOrig.height);
+                const anchor = getBoxAnchorPoint(origen, x2, y2);
+                x1 = anchor.x;
+                y1 = anchor.y;
             }
 
             const dist = pointToSegmentDistance(x, y, x1, y1, x2, y2);
@@ -1043,6 +1123,7 @@ function crearRelacionDirecta(origen, destino, tipo) {
         // 3. Crear el enlace punteado de Clase de Asociación hacia la relación / destino
         if (intermediateClass) {
             const tempRelAssocId = 'temp-rel-' + (Date.now() + 50) + '-assoc';
+            const assocName = `${origen.nombre}:${destino.nombre}`;
             const nuevaRelAssoc = {
                 id: tempRelAssocId,
                 tempId: tempRelAssocId,
@@ -1052,7 +1133,8 @@ function crearRelacionDirecta(origen, destino, tipo) {
                 destinoId: destino.id,
                 tipoRelacion: 'CLASE_ASOCIACION',
                 cardinalidadOrigen: '',
-                cardinalidadDestino: ''
+                cardinalidadDestino: '',
+                nombre: assocName
             };
             diagramData.relaciones.push(nuevaRelAssoc);
             if (stompClient && stompClient.connected && !String(intermediateClass.id).startsWith('temp-') && !String(destino.id).startsWith('temp-')) {
@@ -1062,7 +1144,8 @@ function crearRelacionDirecta(origen, destino, tipo) {
                         tempId: tempRelAssocId,
                         origenId: intermediateClass.id,
                         destinoId: destino.id,
-                        tipo: 'CLASE_ASOCIACION'
+                        tipo: 'CLASE_ASOCIACION',
+                        nombre: assocName
                     })
                 });
             }
@@ -2298,10 +2381,7 @@ function dibujarLineaRelacion(origen, destino, tipo, nombre, cardOrig, cardDest,
 
     // Si es CLASE_ASOCIACION, nace desde el punto medio de la línea continua base
     if (tipo === "CLASE_ASOCIACION") {
-        let baseRel = diagramData.relaciones.find(r => 
-            r.tipoRelacion !== 'CLASE_ASOCIACION' && 
-            (String(getRelOrigId(r)) === String(destino.id) || String(getRelDestId(r)) === String(destino.id))
-        );
+        const baseRel = findBestBaseRelationForAssociation(origen, destino, nombre);
 
         let targetX = destino.posX + dimDest.width / 2;
         let targetY = destino.posY + dimDest.height / 2;
@@ -2319,8 +2399,9 @@ function dibujarLineaRelacion(origen, destino, tipo, nombre, cardOrig, cardDest,
             }
         }
 
-        const assocAnchorX = origen.posX + dimOrig.width / 2;
-        const assocAnchorY = (targetY < origen.posY) ? origen.posY : (origen.posY + dimOrig.height);
+        const anchor = getBoxAnchorPoint(origen, targetX, targetY);
+        const assocAnchorX = anchor.x;
+        const assocAnchorY = anchor.y;
 
         ctx.strokeStyle = isSelected ? colorRelacionSeleccionada : "#94A3B8";
         ctx.lineWidth = isSelected ? 2.5 : 1.6;

@@ -4,6 +4,7 @@ import com.casecollaborative.engine.model.entity.*;
 import com.casecollaborative.engine.repository.*;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -333,78 +334,67 @@ public class ImageDiagramImportService {
 
             String requestJson = objectMapper.writeValueAsString(requestBody);
 
-            String[] modelsToTry = new String[] {
-                    "gemini-3.8-flash",
-                    "gemini-2.5-flash",
-                    "gemini-2.0-flash",
-                    "gemini-1.5-flash",
-                    "gemini-2.5-pro",
-                    "gemini-1.5-pro"
-            };
-            HttpResponse<String> response = null;
-            HttpResponse<String> lastMeaningfulErrorResponse = null;
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(20))
                     .build();
 
+            List<String> modelsToTry = obtenerModelosDisponibles(client, apiKey);
+            HttpResponse<String> response = null;
+            HttpResponse<String> lastMeaningfulErrorResponse = null;
+
             for (String modelName : modelsToTry) {
-                String apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + modelName
-                        + ":generateContent?key=" + apiKey.trim();
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(apiUrl))
-                        .timeout(Duration.ofSeconds(45))
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(requestJson))
-                        .build();
+                List<String> endpointUrls = List.of(
+                        "https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey.trim(),
+                        "https://generativelanguage.googleapis.com/v1/models/" + modelName + ":generateContent?key=" + apiKey.trim()
+                );
 
-                // Reintentos automáticos para mitigar 503 (spikes de alta demanda temporal)
-                int maxRetries = 2;
-                for (int attempt = 1; attempt <= maxRetries; attempt++) {
-                    try {
-                        response = client.send(request, HttpResponse.BodyHandlers.ofString());
-                        if (response.statusCode() == 200) {
-                            log.info("Gemini Vision response OK (200) con modelo: {} (intento {})", modelName, attempt);
-                            break;
-                        }
+                boolean modelOk = false;
+                for (String apiUrl : endpointUrls) {
+                    HttpRequest request = HttpRequest.newBuilder()
+                            .uri(URI.create(apiUrl))
+                            .timeout(Duration.ofSeconds(50))
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(requestJson))
+                            .build();
 
-                        lastMeaningfulErrorResponse = response;
-                        String body = response.body() != null ? response.body() : "";
-                        log.warn("Modelo {} retornó HTTP {} en intento {}: {}", modelName, response.statusCode(),
-                                attempt, body);
-
-                        // Si es clave de API inválida, no reintentar
-                        if (response.statusCode() == 400
-                                && (body.contains("API_KEY_INVALID") || body.contains("API key not valid"))) {
-                            break;
-                        }
-
-                        // Si es 503 o 429 (alta demanda temporal), esperar y reintentar
-                        if ((response.statusCode() == 503 || response.statusCode() == 429) && attempt < maxRetries) {
-                            log.info("Esperando 1.5s antes de reintentar debido a alta demanda ({}) con {}...",
-                                    response.statusCode(), modelName);
-                            Thread.sleep(1500L * attempt);
-                            continue;
-                        }
-
-                        // Si es 404, pasar al siguiente modelo de la lista
-                        if (response.statusCode() == 404) {
-                            break;
-                        }
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    } catch (Exception ex) {
-                        log.warn("Excepción llamando a {} (intento {}): {}", modelName, attempt, ex.getMessage());
-                        if (attempt < maxRetries) {
-                            try {
-                                Thread.sleep(1000L);
-                            } catch (InterruptedException ignored) {
+                    int maxRetries = 2;
+                    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+                        try {
+                            response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                            if (response.statusCode() == 200) {
+                                log.info("Gemini Vision OK (200) con modelo: {} vía {}", modelName, apiUrl.contains("v1beta") ? "v1beta" : "v1");
+                                modelOk = true;
+                                break;
                             }
+
+                            lastMeaningfulErrorResponse = response;
+                            String body = response.body() != null ? response.body() : "";
+                            log.warn("Modelo {} en intento {} retornó HTTP {}: {}", modelName, attempt, response.statusCode(), body);
+
+                            if (response.statusCode() == 400 && (body.contains("API_KEY_INVALID") || body.contains("API key not valid"))) {
+                                break;
+                            }
+
+                            if ((response.statusCode() == 503 || response.statusCode() == 429) && attempt < maxRetries) {
+                                Thread.sleep(1500L * attempt);
+                                continue;
+                            }
+
+                            if (response.statusCode() == 404) {
+                                break; // Probar siguiente endpoint o modelo
+                            }
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        } catch (Exception ex) {
+                            log.warn("Excepción llamando a {}: {}", modelName, ex.getMessage());
                         }
                     }
+
+                    if (modelOk) break;
                 }
 
-                if (response != null && response.statusCode() == 200) {
+                if (modelOk && response != null && response.statusCode() == 200) {
                     break;
                 }
             }
@@ -542,5 +532,74 @@ public class ImageDiagramImportService {
         if (r.contains("DIRIG"))
             return "ASOCIACION_DIRIGIDA";
         return "ASOCIACION";
+    }
+
+    private List<String> obtenerModelosDisponibles(HttpClient client, String apiKey) {
+        List<String> discovered = new ArrayList<>();
+        try {
+            String listUrl = "https://generativelanguage.googleapis.com/v1beta/models?key=" + apiKey.trim();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(listUrl))
+                    .timeout(Duration.ofSeconds(10))
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() == 200 && resp.body() != null) {
+                JsonNode root = objectMapper.readTree(resp.body());
+                JsonNode modelsNode = root.get("models");
+                if (modelsNode != null && modelsNode.isArray()) {
+                    List<String> flashModels = new ArrayList<>();
+                    List<String> proModels = new ArrayList<>();
+                    List<String> otherModels = new ArrayList<>();
+
+                    for (JsonNode m : modelsNode) {
+                        String name = m.path("name").asText();
+                        if (name.startsWith("models/")) {
+                            name = name.substring("models/".length());
+                        }
+                        JsonNode methods = m.path("supportedGenerationMethods");
+                        boolean supportsGenerate = false;
+                        if (methods.isArray()) {
+                            for (JsonNode meth : methods) {
+                                if ("generateContent".equalsIgnoreCase(meth.asText())) {
+                                    supportsGenerate = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (supportsGenerate && name.toLowerCase().contains("gemini")) {
+                            if (name.toLowerCase().contains("flash")) {
+                                flashModels.add(name);
+                            } else if (name.toLowerCase().contains("pro")) {
+                                proModels.add(name);
+                            } else {
+                                otherModels.add(name);
+                            }
+                        }
+                    }
+                    discovered.addAll(flashModels);
+                    discovered.addAll(proModels);
+                    discovered.addAll(otherModels);
+                }
+            } else {
+                log.warn("ListModels retornó HTTP {}: {}", resp.statusCode(), resp.body());
+            }
+        } catch (Exception e) {
+            log.warn("No se pudo autodescubrir modelos vía ListModels: {}", e.getMessage());
+        }
+
+        if (discovered.isEmpty()) {
+            discovered.addAll(List.of(
+                    "gemini-2.5-flash",
+                    "gemini-2.0-flash",
+                    "gemini-1.5-flash-latest",
+                    "gemini-1.5-flash",
+                    "gemini-2.5-pro",
+                    "gemini-1.5-pro-latest",
+                    "gemini-1.5-pro"
+            ));
+        }
+        log.info("Modelos Gemini disponibles para procesar imagen: {}", discovered);
+        return discovered;
     }
 }

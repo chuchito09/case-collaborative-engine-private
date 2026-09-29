@@ -105,6 +105,32 @@ public class XmiInteroperabilityService {
 
                     claseElement.appendChild(attrElement);
                 }
+                // Exportar métodos (operaciones)
+                List<Map<String, Object>> metodos = c.getMetodos();
+                if (metodos != null) {
+                    for (Map<String, Object> m : metodos) {
+                        String mNombre = (String) m.get("nombre");
+                        if (mNombre == null || mNombre.isBlank()) continue;
+                        Element opElement = doc.createElement("ownedOperation");
+                        opElement.setAttribute("xmi:type", "uml:Operation");
+                        opElement.setAttribute("xmi:id", "EAID_OP_" + UUID.randomUUID().toString().replace("-", ""));
+                        opElement.setAttribute("name", mNombre);
+                        opElement.setAttribute("visibility", m.get("visibilidad") != null ? (String) m.get("visibilidad") : "public");
+
+                        String retType = m.get("tipoRetorno") != null ? (String) m.get("tipoRetorno") : "void";
+                        if (!"void".equalsIgnoreCase(retType)) {
+                            Element returnParam = doc.createElement("ownedParameter");
+                            returnParam.setAttribute("xmi:type", "uml:Parameter");
+                            returnParam.setAttribute("direction", "return");
+                            Element retTypeEl = doc.createElement("type");
+                            retTypeEl.setAttribute("xmi:type", "uml:PrimitiveType");
+                            retTypeEl.setAttribute("href", "http://schema.omg.org/spec/UML/2.1/uml.xml#" + retType);
+                            returnParam.appendChild(retTypeEl);
+                            opElement.appendChild(returnParam);
+                        }
+                        claseElement.appendChild(opElement);
+                    }
+                }
             }
 
             for (RelacionClase r : relaciones) {
@@ -146,24 +172,36 @@ public class XmiInteroperabilityService {
                         assocElement.setAttribute("name", r.getNombre());
                     }
 
+                    String end1Id = "EAID_SRC_" + r.getId();
+                    String end2Id = "EAID_DST_" + r.getId();
+                    assocElement.setAttribute("memberEnd", end1Id + " " + end2Id);
+
                     Element end1 = doc.createElement("ownedEnd");
+                    end1.setAttribute("xmi:type", "uml:Property");
+                    end1.setAttribute("xmi:id", end1Id);
                     end1.setAttribute("type", "EAID_CLS_" + r.getClaseOrigen().getId());
-                    if (r.getCardinalidadOrigen() != null) {
+                    end1.setAttribute("association", "EAID_ASSOC_" + r.getId());
+                    if (r.getCardinalidadOrigen() != null && !r.getCardinalidadOrigen().isBlank()) {
                         Element lower1 = doc.createElement("lowerValue");
+                        lower1.setAttribute("xmi:type", "uml:LiteralString");
                         lower1.setAttribute("value", r.getCardinalidadOrigen());
                         end1.appendChild(lower1);
                     }
                     assocElement.appendChild(end1);
 
                     Element end2 = doc.createElement("ownedEnd");
+                    end2.setAttribute("xmi:type", "uml:Property");
+                    end2.setAttribute("xmi:id", end2Id);
                     end2.setAttribute("type", "EAID_CLS_" + r.getClaseDestino().getId());
+                    end2.setAttribute("association", "EAID_ASSOC_" + r.getId());
                     if ("COMPOSICION".equalsIgnoreCase(r.getTipoRelacion())) {
                         end2.setAttribute("aggregation", "composite");
                     } else if ("AGREGACION".equalsIgnoreCase(r.getTipoRelacion())) {
                         end2.setAttribute("aggregation", "shared");
                     }
-                    if (r.getCardinalidadDestino() != null) {
+                    if (r.getCardinalidadDestino() != null && !r.getCardinalidadDestino().isBlank()) {
                         Element lower2 = doc.createElement("lowerValue");
+                        lower2.setAttribute("xmi:type", "uml:LiteralString");
                         lower2.setAttribute("value", r.getCardinalidadDestino());
                         end2.appendChild(lower2);
                     }
@@ -172,6 +210,104 @@ public class XmiInteroperabilityService {
                     packagedElement.appendChild(assocElement);
                 }
             }
+
+            // Extensión de Enterprise Architect para preservar tipos exactos de conectores y visualización
+            Element eaExtension = doc.createElement("xmi:Extension");
+            eaExtension.setAttribute("extender", "Enterprise Architect");
+            eaExtension.setAttribute("extenderID", "6.5");
+
+            Element connectorsElem = doc.createElement("connectors");
+            for (RelacionClase r : relaciones) {
+                Element conn = doc.createElement("connector");
+                String rType = r.getTipoRelacion();
+                String eaConnId = "EAID_ASSOC_" + r.getId();
+                if ("GENERALIZACION".equalsIgnoreCase(rType)) {
+                    eaConnId = "EAID_GEN_" + r.getId();
+                } else if ("REALIZACION".equalsIgnoreCase(rType)) {
+                    eaConnId = "EAID_REAL_" + r.getId();
+                } else if ("DEPENDENCIA".equalsIgnoreCase(rType)) {
+                    eaConnId = "EAID_DEP_" + r.getId();
+                }
+                conn.setAttribute("xmi:idref", eaConnId);
+
+                Element srcConn = doc.createElement("source");
+                srcConn.setAttribute("xmi:idref", "EAID_CLS_" + r.getClaseOrigen().getId());
+                Element srcMult = doc.createElement("type");
+                srcMult.setAttribute("multiplicity", r.getCardinalidadOrigen() != null ? r.getCardinalidadOrigen() : "");
+                srcConn.appendChild(srcMult);
+                conn.appendChild(srcConn);
+
+                Element dstConn = doc.createElement("target");
+                dstConn.setAttribute("xmi:idref", "EAID_CLS_" + r.getClaseDestino().getId());
+                Element dstMult = doc.createElement("type");
+                dstMult.setAttribute("multiplicity", r.getCardinalidadDestino() != null ? r.getCardinalidadDestino() : "");
+                if ("COMPOSICION".equalsIgnoreCase(rType)) {
+                    dstMult.setAttribute("aggregation", "composite");
+                } else if ("AGREGACION".equalsIgnoreCase(rType)) {
+                    dstMult.setAttribute("aggregation", "shared");
+                }
+                dstConn.appendChild(dstMult);
+                conn.appendChild(dstConn);
+
+                Element propConn = doc.createElement("properties");
+                String eaTypeStr = "Association";
+                String subtypeStr = "";
+                if ("GENERALIZACION".equalsIgnoreCase(rType)) {
+                    eaTypeStr = "Generalization";
+                } else if ("REALIZACION".equalsIgnoreCase(rType)) {
+                    eaTypeStr = "Realisation";
+                } else if ("DEPENDENCIA".equalsIgnoreCase(rType)) {
+                    eaTypeStr = "Dependency";
+                } else if ("AGREGACION".equalsIgnoreCase(rType)) {
+                    eaTypeStr = "Aggregation";
+                    subtypeStr = "Shared";
+                } else if ("COMPOSICION".equalsIgnoreCase(rType)) {
+                    eaTypeStr = "Composition";
+                    subtypeStr = "Composite";
+                } else if ("CLASE_ASOCIACION".equalsIgnoreCase(rType)) {
+                    eaTypeStr = "Association";
+                    subtypeStr = "Class";
+                }
+                propConn.setAttribute("ea_type", eaTypeStr);
+                if (!subtypeStr.isEmpty()) propConn.setAttribute("subtype", subtypeStr);
+                if (r.getNombre() != null && !r.getNombre().isBlank()) propConn.setAttribute("name", r.getNombre());
+                conn.appendChild(propConn);
+
+                connectorsElem.appendChild(conn);
+            }
+            eaExtension.appendChild(connectorsElem);
+
+            Element diagramsElem = doc.createElement("diagrams");
+            Element diagElem = doc.createElement("diagram");
+            diagElem.setAttribute("xmi:id", "EAID_DIAG_" + diagrama.getId());
+
+            Element modelDiag = doc.createElement("model");
+            modelDiag.setAttribute("package", packagedElement.getAttribute("xmi:id"));
+            modelDiag.setAttribute("type", "Logical");
+            modelDiag.setAttribute("name", diagrama.getNombre());
+            diagElem.appendChild(modelDiag);
+
+            Element diagProps = doc.createElement("properties");
+            diagProps.setAttribute("name", diagrama.getNombre());
+            diagProps.setAttribute("type", "Logical");
+            diagElem.appendChild(diagProps);
+
+            Element diagElements = doc.createElement("elements");
+            for (Clase c : clases) {
+                Element dObj = doc.createElement("element");
+                dObj.setAttribute("xmi:idref", "EAID_CLS_" + c.getId());
+                int left = (int) Math.round(c.getPosX());
+                int top = -(int) Math.round(c.getPosY());
+                int right = left + 200;
+                int bottom = top - 130;
+                dObj.setAttribute("geometry", "Left=" + left + ";Top=" + top + ";Right=" + right + ";Bottom=" + bottom + ";");
+                diagElements.appendChild(dObj);
+            }
+            diagElem.appendChild(diagElements);
+            diagramsElem.appendChild(diagElem);
+            eaExtension.appendChild(diagramsElem);
+
+            rootElement.appendChild(eaExtension);
 
             TransformerFactory transformerFactory = TransformerFactory.newInstance();
             Transformer transformer = transformerFactory.newTransformer();
@@ -295,6 +431,8 @@ public class XmiInteroperabilityService {
                                           "uml:Interface".equalsIgnoreCase(xmiType) ||
                                           "uml:Enumeration".equalsIgnoreCase(xmiType) ||
                                           "uml:DataType".equalsIgnoreCase(xmiType) ||
+                                          "uml:AssociationClass".equalsIgnoreCase(xmiType) ||
+                                          "AssociationClass".equalsIgnoreCase(xmiType) ||
                                           "Class".equalsIgnoreCase(xmiType) ||
                                           "Interface".equalsIgnoreCase(xmiType);
 
@@ -357,9 +495,12 @@ public class XmiInteroperabilityService {
                         xmiIdToClaseMap.put(xmiId, clase);
                         classIndex++;
 
-                        // Parsear Atributos dentro de la clase
+                        // Parsear Atributos y Operaciones (Métodos) dentro de la clase
                         NodeList childNodes = el.getChildNodes();
                         int attrOrder = 0;
+                        int metOrder = 0;
+                        List<Map<String, Object>> metodosList = new ArrayList<>();
+
                         for (int j = 0; j < childNodes.getLength(); j++) {
                             Node child = childNodes.item(j);
                             if (child.getNodeType() == Node.ELEMENT_NODE) {
@@ -370,9 +511,6 @@ public class XmiInteroperabilityService {
 
                                 if ("ownedAttribute".equalsIgnoreCase(childTag) || "attribute".equalsIgnoreCase(childTag) || "uml:Property".equalsIgnoreCase(propType)) {
                                     String attrName = childEl.getAttribute("name");
-                                    String assocId = childEl.getAttribute("association");
-
-                                    // Si es una propiedad con type o target ref
                                     String targetRef = null;
                                     NodeList typeNodes = childEl.getElementsByTagName("type");
                                     if (typeNodes.getLength() > 0) {
@@ -401,8 +539,34 @@ public class XmiInteroperabilityService {
                                         attr.setOrden(attrOrder++);
                                         atributoRepository.save(attr);
                                     }
+                                } else if ("ownedOperation".equalsIgnoreCase(childTag) || "operation".equalsIgnoreCase(childTag)) {
+                                    String opName = childEl.getAttribute("name");
+                                    if (opName != null && !opName.isBlank()) {
+                                        String opVis = childEl.getAttribute("visibility");
+                                        if (opVis == null || opVis.isBlank()) opVis = "public";
+                                        String returnType = "void";
+                                        NodeList params = childEl.getElementsByTagName("ownedParameter");
+                                        for (int p = 0; p < params.getLength(); p++) {
+                                            Element paramEl = (Element) params.item(p);
+                                            if ("return".equalsIgnoreCase(paramEl.getAttribute("direction"))) {
+                                                returnType = parseDataType(paramEl);
+                                            }
+                                        }
+                                        Map<String, Object> mMap = new HashMap<>();
+                                        mMap.put("id", "met-" + System.currentTimeMillis() + "-" + (metOrder++));
+                                        mMap.put("nombre", opName.replaceAll("[()\\s]", "").trim());
+                                        mMap.put("tipoRetorno", returnType);
+                                        mMap.put("visibilidad", opVis);
+                                        mMap.put("orden", metOrder);
+                                        metodosList.add(mMap);
+                                    }
                                 }
                             }
+                        }
+
+                        if (!metodosList.isEmpty()) {
+                            clase.setMetodos(metodosList);
+                            claseRepository.save(clase);
                         }
                     }
                 }
@@ -470,15 +634,20 @@ public class XmiInteroperabilityService {
                 }
             }
 
-            // 4. CUARTO PASO: Parsear Asociaciones UML Estándar
+            // 4. CUARTO PASO: Parsear Asociaciones y Clases de Asociación UML Estándar
             for (int i = 0; i < allElements.getLength(); i++) {
                 Node node = allElements.item(i);
                 if (node.getNodeType() == Node.ELEMENT_NODE) {
                     Element el = (Element) node;
                     String xmiType = getAttributeValue(el, "xmi:type", "type");
+                    String tag = el.getTagName();
 
-                    if ("uml:Association".equalsIgnoreCase(xmiType) || "Association".equalsIgnoreCase(el.getTagName())) {
+                    boolean isAssoc = "uml:Association".equalsIgnoreCase(xmiType) || "Association".equalsIgnoreCase(tag);
+                    boolean isAssocClass = "uml:AssociationClass".equalsIgnoreCase(xmiType) || "AssociationClass".equalsIgnoreCase(tag);
+
+                    if (isAssoc || isAssocClass) {
                         String relName = el.getAttribute("name");
+                        String assocXmiId = getAttributeValue(el, "xmi:id", "id");
                         List<Element> ownedEnds = new ArrayList<>();
                         List<String> memberEndIds = new ArrayList<>();
 
@@ -532,7 +701,13 @@ public class XmiInteroperabilityService {
                         }
 
                         if (cOrig != null && cDest != null) {
-                            crearRelacionSiNoExiste(diagrama, cOrig, cDest, tipoRel, relName, cardOrig, cardDest);
+                            if (isAssocClass && assocXmiId != null && xmiIdToClaseMap.containsKey(assocXmiId)) {
+                                Clase cAssoc = xmiIdToClaseMap.get(assocXmiId);
+                                crearRelacionSiNoExiste(diagrama, cOrig, cDest, "ASOCIACION", "", cardOrig, cardDest);
+                                crearRelacionSiNoExiste(diagrama, cAssoc, cDest, "CLASE_ASOCIACION", cOrig.getNombre() + ":" + cDest.getNombre(), "", "");
+                            } else {
+                                crearRelacionSiNoExiste(diagrama, cOrig, cDest, tipoRel, relName, cardOrig, cardDest);
+                            }
                         }
                     }
                 }
@@ -593,6 +768,8 @@ public class XmiInteroperabilityService {
                                 tipoRel = "AGREGACION";
                             } else if ("Composition".equalsIgnoreCase(eaType) || "Composite".equalsIgnoreCase(subtype)) {
                                 tipoRel = "COMPOSICION";
+                            } else if ("Association Class".equalsIgnoreCase(eaType) || "AssociationClass".equalsIgnoreCase(eaType) || ("Association".equalsIgnoreCase(eaType) && "Class".equalsIgnoreCase(subtype))) {
+                                tipoRel = "CLASE_ASOCIACION";
                             }
 
                             crearRelacionSiNoExiste(diagrama, cOrig, cDest, tipoRel, name, cardOrig, cardDest);
